@@ -1,0 +1,35 @@
+{
+  "name": "asrpc",
+  "version": "1.0.0",
+  "description": "An RPC implementation honered as-is principle on server and on client.",
+  "main": "dist/index.js",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyurl/asrpc.git"
+  },
+  "keywords": [
+    "rpc",
+    "as-is"
+  ],
+  "author": "Ayon Lee <i@hyurl.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hyurl/asrpc/issues"
+  },
+  "homepage": "https://github.com/hyurl/asrpc#readme",
+  "dependencies": {
+    "@types/fs-extra": "^5.0.4",
+    "@types/node": "^10.12.0",
+    "@types/uuid": "^3.4.4",
+    "fs-extra": "^7.0.0",
+    "tslib": "^1.9.3",
+    "uuid": "^3.3.2"
+  },
+  "devDependencies": {
+    "source-map-support": "^0.5.9"
+  }
+}
