@@ -14,23 +14,30 @@ class MyService extends EventEmitter {
         this.id = 'my.service';
     }
 
-    async sum(a, b) {
-        return a + b;
+    sum(a, b) {
+        return awaiter(this, void 0, void 0, function* () {
+            return a + b;
+        });
     }
 
-    async getId() {
-        return this.id;
+    getId() {
+        return awaiter(this, void 0, void 0, function* () {
+            return this.id;
+        });
     }
 
-    async getPid() {
-        return process.pid;
+    getPid() {
+        return awaiter(this, void 0, void 0, function* () {
+            return process.pid;
+        });
     }
 
-    async exit() {
-        worker.kill();
-        await ins.close();
-        console.log("#### OK ####");
-        // process.exit();
+    exit() {
+        return awaiter(this, void 0, void 0, function* () {
+            worker.kill();
+            yield ins.close();
+            console.log("#### OK ####");
+        });
     }
 }
 
