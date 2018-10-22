@@ -1,27 +1,23 @@
 import * as net from "net";
-import * as os from "os";
 import * as path from "path";
 import * as fs from "fs-extra";
 import { EventEmitter } from "events";
+import { generate as uniqid } from "shortid";
 import {
-    findId,
+    getId,
     send,
     receive,
     sendError,
     receiveError,
     tasks,
     proxify,
-    serviceId
+    serviceId,
+    eventEmitter,
+    isSocketResetError,
+    absPath
 } from './util';
-import uuid = require('uuid/v4');
 
 export type ServiceClass<T> = new (...args) => T;
-
-export interface Service extends EventEmitter {
-    readonly id: string;
-    before?(): void | Promise<void>;
-    after?(): void | Promise<void>;
-}
 
 export interface ServiceOptions {
     host?: string;
@@ -38,18 +34,18 @@ export class ServiceInstance implements ServiceOptions {
     private server: net.Server;
     private client: net.Socket;
     private services: {
-        [id: string]: ServiceClass<Service>
+        [id: string]: ServiceClass<any>
     } = {};
     private instances: {
-        [srvId: string]: Service
+        [srvId: string]: any
     } = {};
 
-    register<T extends Service>(target: ServiceClass<T>): void {
-        this.services[findId(target)] = target;
+    register<T>(target: ServiceClass<T>): void {
+        this.services[getId(target)] = target;
     }
 
-    deregister<T extends Service>(target: ServiceClass<T>): void {
-        delete this.services[findId(target)];
+    deregister<T>(target: ServiceClass<T>): void {
+        delete this.services[getId(target)];
     }
 
     async start(): Promise<this> {
@@ -74,34 +70,30 @@ export class ServiceInstance implements ServiceOptions {
                     socket.emit(event, ...data);
                 }
             }).on("error", err => {
-                if (!err.message.includes("socket has been ended")) {
-                    console.log(err);
+                if (!isSocketResetError(err)) {
+                    console.error(err);
                 }
-            }).on("rpc-connect", (srvId: string, id: string) => {
+            }).on("rpc-connect", (srvId: string, name: string, id: string, ...args) => {
                 if (this.services[id]) {
-                    this.instances[srvId] = new this.services[id];
+                    this.instances[srvId] = new this.services[id](...args);
                     socket.write(send("rpc-connected", srvId, id));
                 } else {
-                    let err = new Error(`service '${id}' not found`);
+                    let err = new Error(`service '${name}' not registered`);
                     socket.write(send("rpc-connect-error", srvId, sendError(err)));
                 }
             }).on("rpc-disconnect", (srvId: string) => {
                 delete this.instances[srvId];
-            }).on("rpc-request", (srvId: string, taskId: string, method: string, ...data) => {
+            }).on("rpc-request", (srvId: string, taskId: string, method: string, ...args) => {
                 let service = this.instances[srvId];
 
                 Promise.resolve().then(() => {
-                    return service.before && service.before();
-                }).then(() => {
-                    return service[method](...data);
+                    return service[method](...args);
                 }).then(res => {
                     return new Promise(resolve => {
                         socket.write(send("rpc-response", srvId, taskId, res), () => {
                             resolve();
                         });
                     });
-                }).then(() => {
-                    return service.after && service.after();
                 }).catch(err => {
                     socket.write(send("rpc-error", srvId, taskId, sendError(err)));
                 });
@@ -118,27 +110,25 @@ export class ServiceInstance implements ServiceOptions {
         }));
     }
 
-    connect<T extends Service>(target: ServiceClass<T>): Promise<T> {
+    connect<T>(target: ServiceClass<T>, ...args: any[]): Promise<T> {
         return new Promise((resolve, reject) => {
-            let connect = () => {
-                if (!this.client) {
+            if (!this.client) {
+                let connect = () => {
                     if (this.path) {
                         this.client = net.createConnection(this.path);
                     } else {
                         this.client = net.createConnection(this.port, this.host);
                     }
-                }
-            };
+                };
 
-            connect();
+                connect();
 
-            if (this.client.connecting) {
                 this.client.once("connect", () => {
                     resolve();
                 }).once("error", err => {
                     reject(err);
                 }).on("error", err => {
-                    if (err.message.includes("socket has been ended")) {
+                    if (isSocketResetError(err)) {
                         this.client.unref();
 
                         let times = 0;
@@ -149,7 +139,8 @@ export class ServiceInstance implements ServiceOptions {
 
                                 if (times === 5) {
                                     clearTimeout(timer);
-                                } else if (!this.client.destroyed || this.client.connecting) {
+                                } else if (!this.client.destroyed
+                                    || this.client.connecting) {
                                     clearTimeout(timer);
                                 } else {
                                     reconnect();
@@ -159,7 +150,7 @@ export class ServiceInstance implements ServiceOptions {
                     }
                 }).on("data", buf => {
                     for (let [event, srvId, ...data] of receive(buf)) {
-                        this.instances[srvId].emit(event, ...data);
+                        this.instances[srvId][eventEmitter].emit(event, ...data);
                     }
                 });
             } else {
@@ -168,26 +159,26 @@ export class ServiceInstance implements ServiceOptions {
         }).then(() => {
             return new Promise((resolve: (value: T) => void, reject) => {
                 let srv = new target;
-                let srvId = srv[serviceId] = uuid();
+                let srvId = srv[serviceId] = uniqid();
 
+                srv[eventEmitter] = new EventEmitter;
                 this.instances[srvId] = srv;
-                this.client.write(send("rpc-connect", srvId, srv.id));
+                this.client.write(send("rpc-connect", srvId, target.name, getId(target), ...args));
 
-                srv.once("rpc-connected", () => {
-                    resolve(<T>proxify(srv, srvId, this));
+                srv[eventEmitter].once("rpc-connected", () => {
+                    resolve(proxify(srv, srvId, this));
                 }).once("rpc-connect-error", (err: any) => {
-                    err = receiveError(err);
-                    reject(err);
+                    reject(receiveError(err));
                 }).on("rpc-response", (taskId: string, res: any) => {
                     tasks[taskId].success(res);
                 }).on("rpc-error", (taskId: string, err: any) => {
-                    tasks[taskId].error(err);
+                    tasks[taskId].error(receiveError(err));
                 });
             });
         });
     }
 
-    disconnect(srv: Service): Promise<void> {
+    disconnect(srv: Function): Promise<void> {
         return new Promise(resolve => {
             let srvId = srv[serviceId];
             delete this.instances[srvId];
@@ -205,15 +196,10 @@ export function createInstance(config: ServiceOptions): ServiceInstance;
 export function createInstance(): ServiceInstance {
     let ins = new ServiceInstance;
 
-    if (typeof arguments[0] == "string") {
-        ins.path = arguments[0];
-
-        // resolve path to be absolute
-        if (!path.isAbsolute(ins.path)) {
-            ins.path = path.resolve(os.tmpdir(), ".asrpc", ins.path);
-        }
-    } else if (typeof arguments[0] == "object") {
+    if (typeof arguments[0] == "object") {
         Object.assign(ins, arguments[0]);
+    } else if (typeof arguments[0] == "string") {
+        ins.path = absPath(arguments[0]);
     } else {
         ins.port = arguments[0];
         ins.host = arguments[1];

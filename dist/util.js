@@ -1,20 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const uuid = require("uuid/v4");
+const shortid_1 = require("shortid");
+const hash = require("object-hash");
+const assert_1 = require("assert");
+const path = require("path");
+const os = require("os");
 const proxified = Symbol("proxified");
 exports.serviceId = Symbol("serviceId");
-function findId(target) {
-    let str = target.toString(), re = /this(\.id|\['id'\]|\["id"\])\s*=\s*["'`](.*)["'`]\s*[;\r\n]/, matches = str.match(re);
-    if (matches) {
-        return matches[2];
-    }
-    else {
-        throw new SyntaxError("no 'id' detected in the given service class");
-    }
+exports.eventEmitter = Symbol("eventEmitter");
+function getId(target) {
+    return hash(target).slice(0, 8);
 }
-exports.findId = findId;
-function send(event, uuid, ...data) {
-    return Buffer.from(JSON.stringify([event, uuid, ...data]) + "\r\n\r\n");
+exports.getId = getId;
+function send(event, uniqid, ...data) {
+    return Buffer.from(JSON.stringify([event, uniqid, ...data]) + "\r\n\r\n");
 }
 exports.send = send;
 function receive(buf) {
@@ -42,10 +41,48 @@ function sendError(err) {
 exports.sendError = sendError;
 function receiveError(err) {
     if (err.name && "message" in err && "stack" in err) {
-        let _err = Object.create(Error.prototype, {
-            name: err.name,
-            message: err.message,
-            stack: err.stack
+        let constructor;
+        switch (err.name) {
+            case EvalError.name:
+                constructor = EvalError;
+                break;
+            case RangeError.name:
+                constructor = RangeError;
+                break;
+            case ReferenceError.name:
+                constructor = ReferenceError;
+                break;
+            case SyntaxError.name:
+                constructor = SyntaxError;
+                break;
+            case TypeError.name:
+                constructor = TypeError;
+                break;
+            default:
+                constructor = err.name.includes("AssertionError")
+                    ? assert_1.AssertionError
+                    : Error;
+                break;
+        }
+        let _err = Object.create(constructor.prototype, {
+            name: {
+                configurable: true,
+                writable: true,
+                enumerable: false,
+                value: err.name
+            },
+            message: {
+                configurable: true,
+                writable: true,
+                enumerable: false,
+                value: err.message
+            },
+            stack: {
+                configurable: true,
+                writable: true,
+                enumerable: false,
+                value: err.stack
+            }
         });
         for (let x in err) {
             if (x != "name" && x != "message" && x != "stack") {
@@ -65,13 +102,14 @@ function proxify(srv, srvId, ins) {
                 return srv[prop];
             }
             else if (!srv[prop][proxified]) {
-                let fn = function (...data) {
+                let fn = function (...args) {
                     return new Promise((resolve, reject) => {
-                        let taskId = uuid();
+                        let taskId = shortid_1.generate();
                         let timer = setTimeout(() => {
-                            reject(new Error("rpc request timeout after 5 seconds"));
+                            let num = Math.round(ins.timeout / 1000), unit = num === 1 ? "second" : "seconds";
+                            reject(new Error(`rpc request timeout after ${num} ${unit}`));
                         }, ins.timeout);
-                        ins["client"].write(send("rpc-request", srvId, taskId, prop, ...data));
+                        ins["client"].write(send("rpc-request", srvId, taskId, prop, ...args));
                         exports.tasks[taskId] = {
                             success: (res) => {
                                 resolve(res);
@@ -109,4 +147,20 @@ function set(target, prop, value, writable = false) {
         value
     });
 }
+function isSocketResetError(err) {
+    return err instanceof Error
+        && (err["code"] == "ECONNRESET"
+            || /socket.*(ended|closed)/.test(err.message));
+}
+exports.isSocketResetError = isSocketResetError;
+function absPath(filename) {
+    if (!path.isAbsolute(filename)) {
+        filename = path.resolve(os.tmpdir(), ".asrpc", filename);
+    }
+    if (os.platform() == "win32" && !(/\\\\[\?\.]\\pipe\\/.test(filename))) {
+        filename = "\\\\?\\pipe\\" + filename;
+    }
+    return filename;
+}
+exports.absPath = absPath;
 //# sourceMappingURL=util.js.map

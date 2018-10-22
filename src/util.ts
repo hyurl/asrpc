@@ -1,23 +1,20 @@
-import uuid = require("uuid/v4")
-import { ServiceClass, Service, ServiceInstance } from "./index";
+import { generate as uniqid } from "shortid";
+import hash = require("object-hash");
+import { AssertionError } from 'assert';
+import * as path from "path";
+import * as os from "os";
+import { ServiceClass, ServiceInstance } from "./index";
 
 const proxified = Symbol("proxified");
 export const serviceId = Symbol("serviceId");
+export const eventEmitter = Symbol("eventEmitter");
 
-export function findId<T extends Service>(target: ServiceClass<T>): string {
-    let str = target.toString(),
-        re = /this(\.id|\['id'\]|\["id"\])\s*=\s*["'`](.*)["'`]\s*[;\r\n]/,
-        matches = str.match(re);
-
-    if (matches) {
-        return matches[2];
-    } else {
-        throw new SyntaxError("no 'id' detected in the given service class");
-    }
+export function getId<T>(target: ServiceClass<T>): string {
+    return hash(target).slice(0, 8);
 }
 
-export function send(event: string, uuid: string, ...data: any[]) {
-    return Buffer.from(JSON.stringify([event, uuid, ...data]) + "\r\n\r\n");
+export function send(event: string, uniqid: string, ...data: any[]) {
+    return Buffer.from(JSON.stringify([event, uniqid, ...data]) + "\r\n\r\n");
 }
 
 export function receive(buf: Buffer): Array<[string, string, any]> {
@@ -50,10 +47,50 @@ export function sendError(err: any) {
 
 export function receiveError(err: any) {
     if (err.name && "message" in err && "stack" in err) {
-        let _err = Object.create(Error.prototype, {
-            name: err.name,
-            message: err.message,
-            stack: err.stack
+        let constructor: Function;
+
+        switch (err.name) {
+            case EvalError.name:
+                constructor = EvalError;
+                break;
+            case RangeError.name:
+                constructor = RangeError;
+                break;
+            case ReferenceError.name:
+                constructor = ReferenceError;
+                break;
+            case SyntaxError.name:
+                constructor = SyntaxError;
+                break;
+            case TypeError.name:
+                constructor = TypeError;
+                break;
+            default:
+                constructor = err.name.includes("AssertionError")
+                    ? AssertionError
+                    : Error;
+                break;
+        }
+
+        let _err = Object.create(constructor.prototype, {
+            name: {
+                configurable: true,
+                writable: true,
+                enumerable: false,
+                value: err.name
+            },
+            message: {
+                configurable: true,
+                writable: true,
+                enumerable: false,
+                value: err.message
+            },
+            stack: {
+                configurable: true,
+                writable: true,
+                enumerable: false,
+                value: err.stack
+            }
         });
 
         for (let x in err) {
@@ -69,26 +106,29 @@ export function receiveError(err: any) {
 }
 
 export const tasks: {
-    [uuid: string]: {
+    [uniqid: string]: {
         success: (res) => void,
         error: (err) => void
     };
 } = {};
 
-export function proxify(srv: Service, srvId: string, ins: ServiceInstance): Service {
+export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
     return new Proxy(srv, {
         get: (srv, prop: string) => {
             if (!(prop in srv.constructor.prototype) || typeof srv[prop] != "function") {
                 return srv[prop];
             } else if (!srv[prop][proxified]) {
-                let fn = function (...data) {
+                let fn = function (...args) {
                     return new Promise((resolve, reject) => {
-                        let taskId = uuid();
+                        let taskId = uniqid();
                         let timer = setTimeout(() => {
-                            reject(new Error("rpc request timeout after 5 seconds"));
+                            let num = Math.round(ins.timeout / 1000),
+                                unit = num === 1 ? "second" : "seconds";
+
+                            reject(new Error(`rpc request timeout after ${num} ${unit}`));
                         }, ins.timeout);
 
-                        ins["client"].write(send("rpc-request", srvId, taskId, prop, ...data));
+                        ins["client"].write(send("rpc-request", srvId, taskId, prop, ...args));
                         tasks[taskId] = {
                             success: (res) => {
                                 resolve(res);
@@ -126,4 +166,23 @@ function set(target, prop, value, writable = false) {
         writable,
         value
     });
+}
+
+export function isSocketResetError(err) {
+    return err instanceof Error
+        && (err["code"] == "ECONNRESET"
+            || /socket.*(ended|closed)/.test(err.message));
+}
+
+export function absPath(filename: string): string {
+    // resolve path to be absolute
+    if (!path.isAbsolute(filename)) {
+        filename = path.resolve(os.tmpdir(), ".asrpc", filename);
+    }
+
+    if (os.platform() == "win32" && !(/\\\\[\?\.]\\pipe\\/.test(filename))) {
+        filename = "\\\\?\\pipe\\" + filename;
+    }
+
+    return filename;
 }
