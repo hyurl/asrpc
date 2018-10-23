@@ -30,6 +30,18 @@ class MyService {
         });
     }
 
+    getDate() {
+        return awaiter(this, void 0, void 0, function* () {
+            return new Date();
+        });
+    }
+
+    getStrWithLineEndings() {
+        return awaiter(this, void 0, void 0, function* () {
+            return "hello\r\n\r\nworld";
+        });
+    }
+
     throw() {
         return awaiter(this, void 0, void 0, function* () {
             throw new TypeError("test error");
@@ -59,11 +71,14 @@ awaiter(void 0, void 0, void 0, function* () {
             worker = cluster.fork();
         } else {
             srv = yield ins.connect(MyService, "my.service");
-            console.log(srv);
 
             assert.strictEqual(yield srv.sum(12, 13), 25);
             assert.strictEqual(yield srv.getId(), "my.service");
-            assert.strictEqual(yield srv.getPid(), process.ppid);
+            if (parseFloat(process.version) >= 8.10) {
+                assert.strictEqual(yield srv.getPid(), process.ppid);
+            }
+            assert.ok((yield srv.getDate()) instanceof Date);
+            assert.strictEqual((yield srv.getStrWithLineEndings()), "hello\r\n\r\nworld");
             yield srv.throw();
             yield srv.exit();
         }

@@ -7,8 +7,6 @@ import {
     getClassId,
     send,
     receive,
-    sendError,
-    receiveError,
     tasks,
     proxify,
     objectId,
@@ -82,7 +80,7 @@ export class ServiceInstance implements ServiceOptions {
                     socket.write(send("rpc-connected", objId, id));
                 } else {
                     let err = new Error(`service '${name}' not registered`);
-                    socket.write(send("rpc-connect-error", objId, sendError(err)));
+                    socket.write(send("rpc-connect-error", objId, err));
                 }
             }).on("rpc-disconnect", (objId: string) => {
                 delete this.instances[objId];
@@ -98,7 +96,7 @@ export class ServiceInstance implements ServiceOptions {
                         });
                     });
                 }).catch(err => {
-                    socket.write(send("rpc-error", objId, taskId, sendError(err)));
+                    socket.write(send("rpc-error", objId, taskId, err));
                 });
             });
         });
@@ -172,17 +170,17 @@ export class ServiceInstance implements ServiceOptions {
                 srv[eventEmitter].once("rpc-connected", () => {
                     resolve(proxify(srv, objId, this));
                 }).once("rpc-connect-error", (err: any) => {
-                    reject(receiveError(err));
+                    reject(err);
                 }).on("rpc-response", (taskId: string, res: any) => {
                     tasks[taskId].success(res);
                 }).on("rpc-error", (taskId: string, err: any) => {
-                    tasks[taskId].error(receiveError(err));
+                    tasks[taskId].error(err);
                 });
             });
         });
     }
 
-    disconnect(srv: Function): Promise<void> {
+    disconnect(srv: any): Promise<void> {
         return new Promise(resolve => {
             let objId = srv[objectId];
             delete this.instances[objId];

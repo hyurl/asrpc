@@ -51,7 +51,7 @@ class ServiceInstance {
                     }
                     else {
                         let err = new Error(`service '${name}' not registered`);
-                        socket.write(util_1.send("rpc-connect-error", objId, util_1.sendError(err)));
+                        socket.write(util_1.send("rpc-connect-error", objId, err));
                     }
                 }).on("rpc-disconnect", (objId) => {
                     delete this.instances[objId];
@@ -66,7 +66,7 @@ class ServiceInstance {
                             });
                         });
                     }).catch(err => {
-                        socket.write(util_1.send("rpc-error", objId, taskId, util_1.sendError(err)));
+                        socket.write(util_1.send("rpc-error", objId, taskId, err));
                     });
                 });
             });
@@ -136,11 +136,11 @@ class ServiceInstance {
                 srv[util_1.eventEmitter].once("rpc-connected", () => {
                     resolve(util_1.proxify(srv, objId, this));
                 }).once("rpc-connect-error", (err) => {
-                    reject(util_1.receiveError(err));
+                    reject(err);
                 }).on("rpc-response", (taskId, res) => {
                     util_1.tasks[taskId].success(res);
                 }).on("rpc-error", (taskId, err) => {
-                    util_1.tasks[taskId].error(util_1.receiveError(err));
+                    util_1.tasks[taskId].error(err);
                 });
             });
         });

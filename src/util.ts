@@ -1,117 +1,40 @@
 import { generate as uniqid } from "shortid";
 import hash = require("object-hash");
-import { AssertionError } from 'assert';
 import * as path from "path";
 import * as os from "os";
+import { encode, decode } from "encoded-buffer";
 import { ServiceClass, ServiceInstance } from "./index";
 
-const proxified = Symbol("proxified");
 export const classId = Symbol("classId");
 export const objectId = Symbol("objectId");
 export const eventEmitter = Symbol("eventEmitter");
-
-export function getClassId<T>(target: ServiceClass<T>): string {
-    return hash(target).slice(0, 8);
-}
-
-export function send(event: string, uniqid: string, ...data: any[]) {
-    return Buffer.from(JSON.stringify([event, uniqid, ...data]) + "\r\n\r\n");
-}
-
-export function receive(buf: Buffer): Array<[string, string, any]> {
-    let pack = buf.toString().split("\r\n\r\n"),
-        parts = [];
-
-    for (let part of pack) {
-        if (part) parts.push(JSON.parse(part));
-    }
-
-    return parts;
-}
-
-export function sendError(err: any) {
-    let isError = err instanceof Error,
-        res = !isError ? null : {
-            name: err.name,
-            message: err.message,
-            stack: err.stack
-        };
-
-    if (isError) {
-        for (let x in err) {
-            res[x] = err[x];
-        }
-    }
-
-    return res || err;
-}
-
-export function receiveError(err: any) {
-    if (err.name && "message" in err && "stack" in err) {
-        let constructor: Function;
-
-        switch (err.name) {
-            case EvalError.name:
-                constructor = EvalError;
-                break;
-            case RangeError.name:
-                constructor = RangeError;
-                break;
-            case ReferenceError.name:
-                constructor = ReferenceError;
-                break;
-            case SyntaxError.name:
-                constructor = SyntaxError;
-                break;
-            case TypeError.name:
-                constructor = TypeError;
-                break;
-            default:
-                constructor = err.name.includes("AssertionError")
-                    ? AssertionError
-                    : Error;
-                break;
-        }
-
-        let _err = Object.create(constructor.prototype, {
-            name: {
-                configurable: true,
-                writable: true,
-                enumerable: false,
-                value: err.name
-            },
-            message: {
-                configurable: true,
-                writable: true,
-                enumerable: false,
-                value: err.message
-            },
-            stack: {
-                configurable: true,
-                writable: true,
-                enumerable: false,
-                value: err.stack
-            }
-        });
-
-        for (let x in err) {
-            if (x != "name" && x != "message" && x != "stack") {
-                _err[x] = err[x];
-            }
-        }
-
-        err = _err;
-    }
-
-    return err;
-}
-
 export const tasks: {
     [uniqid: string]: {
         success: (res) => void,
         error: (err) => void
     };
 } = {};
+
+const proxified = Symbol("proxified");
+
+export function getClassId<T>(target: ServiceClass<T>): string {
+    return hash(target).slice(0, 8);
+}
+
+export function send(event: string, uniqid: string, ...data: any[]) {
+    return Buffer.concat([encode([event, uniqid, ...data]), Buffer.from("\r\n\r\n")]);
+}
+
+export function receive(buf: Buffer): Array<[string, string, any]> {
+    let pack = splitBuffer(buf, "\r\n\r\n"),
+        parts = [];
+
+    for (let part of pack) {
+        if (part) parts.push(decode(part)[0]);
+    }
+
+    return parts;
+}
 
 export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
     return new Proxy(srv, {
@@ -145,6 +68,7 @@ export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
                     });
                 };
 
+                set(fn, prop, fn);
                 set(fn, "name", srv[prop].name);
                 set(fn, "length", srv[prop].length);
                 set(fn, proxified, true);
@@ -152,20 +76,11 @@ export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
                     return Function.prototype.toString.call(srv[prop]);
                 }, true);
 
-                return srv.constructor.prototype[prop] = fn;
+                return fn;
             } else {
                 return srv[prop];
             }
         }
-    });
-}
-
-function set(target, prop, value, writable = false) {
-    Object.defineProperty(target, prop, {
-        configurable: true,
-        enumerable: false,
-        writable,
-        value
     });
 }
 
@@ -186,4 +101,26 @@ export function absPath(filename: string): string {
     }
 
     return filename;
+}
+
+function splitBuffer(buf: Buffer, sep: string) {
+    let parts: Buffer[] = [],
+        offset = 0,
+        index = -1;
+
+    while (0 <= (index = buf.indexOf(sep, offset))) {
+        parts.push(buf.slice(offset, index));
+        offset = index + sep.length;
+    }
+
+    return parts;
+}
+
+function set(target, prop, value, writable = false) {
+    Object.defineProperty(target, prop, {
+        configurable: true,
+        enumerable: false,
+        writable,
+        value
+    });
 }
