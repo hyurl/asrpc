@@ -6,10 +6,11 @@ import * as os from "os";
 import { ServiceClass, ServiceInstance } from "./index";
 
 const proxified = Symbol("proxified");
-export const serviceId = Symbol("serviceId");
+export const classId = Symbol("classId");
+export const objectId = Symbol("objectId");
 export const eventEmitter = Symbol("eventEmitter");
 
-export function getId<T>(target: ServiceClass<T>): string {
+export function getClassId<T>(target: ServiceClass<T>): string {
     return hash(target).slice(0, 8);
 }
 

@@ -6,12 +6,13 @@ const assert_1 = require("assert");
 const path = require("path");
 const os = require("os");
 const proxified = Symbol("proxified");
-exports.serviceId = Symbol("serviceId");
+exports.classId = Symbol("classId");
+exports.objectId = Symbol("objectId");
 exports.eventEmitter = Symbol("eventEmitter");
-function getId(target) {
+function getClassId(target) {
     return hash(target).slice(0, 8);
 }
-exports.getId = getId;
+exports.getClassId = getClassId;
 function send(event, uniqid, ...data) {
     return Buffer.from(JSON.stringify([event, uniqid, ...data]) + "\r\n\r\n");
 }

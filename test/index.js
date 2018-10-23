@@ -8,9 +8,19 @@ var worker;
 var ins = createInstance(2999);
 
 class MyService {
+    constructor(id) {
+        this.id = id;
+    }
+
     sum(a, b) {
         return awaiter(this, void 0, void 0, function* () {
             return a + b;
+        });
+    }
+
+    getId() {
+        return awaiter(this, void 0, void 0, function* () {
+            return this.id;
         });
     }
 
@@ -26,11 +36,14 @@ class MyService {
         });
     }
 
-    exit() {
+    exit(code) {
         return awaiter(this, void 0, void 0, function* () {
             worker.kill();
             yield ins.close();
-            console.log("#### OK ####");
+            if (!code)
+                console.log("#### OK ####");
+            else
+                process.exit(code);
         });
     }
 }
@@ -40,19 +53,28 @@ awaiter(void 0, void 0, void 0, function* () {
     try {
         if (cluster.isMaster) {
             ins.register(MyService);
+
             yield ins.start();
+
             worker = cluster.fork();
         } else {
-            srv = yield ins.connect(MyService);
+            srv = yield ins.connect(MyService, "my.service");
+            console.log(srv);
 
             assert.strictEqual(yield srv.sum(12, 13), 25);
+            assert.strictEqual(yield srv.getId(), "my.service");
             assert.strictEqual(yield srv.getPid(), process.ppid);
             yield srv.throw();
             yield srv.exit();
         }
     } catch (err) {
-        assert.ok(err instanceof TypeError);
-        assert.strictEqual(err.message, "test error");
-        srv && (yield srv.exit());
+        try {
+            assert.ok(err instanceof TypeError);
+            assert.strictEqual(err.message, "test error");
+            srv && (yield srv.exit());
+        } catch (err) {
+            console.log(err);
+            srv && (yield srv.exit(1));
+        }
     }
 });

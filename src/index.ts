@@ -4,17 +4,18 @@ import * as fs from "fs-extra";
 import { EventEmitter } from "events";
 import { generate as uniqid } from "shortid";
 import {
-    getId,
+    getClassId,
     send,
     receive,
     sendError,
     receiveError,
     tasks,
     proxify,
-    serviceId,
+    objectId,
     eventEmitter,
     isSocketResetError,
-    absPath
+    absPath,
+    classId
 } from './util';
 
 export type ServiceClass<T> = new (...args) => T;
@@ -37,15 +38,17 @@ export class ServiceInstance implements ServiceOptions {
         [id: string]: ServiceClass<any>
     } = {};
     private instances: {
-        [srvId: string]: any
+        [objId: string]: any
     } = {};
 
     register<T>(target: ServiceClass<T>): void {
-        this.services[getId(target)] = target;
+        target[classId] = getClassId(target);
+        this.services[target[classId]] = target;
     }
 
     deregister<T>(target: ServiceClass<T>): void {
-        delete this.services[getId(target)];
+        if (target[classId])
+            delete this.services[target[classId]];
     }
 
     async start(): Promise<this> {
@@ -73,29 +76,29 @@ export class ServiceInstance implements ServiceOptions {
                 if (!isSocketResetError(err)) {
                     console.error(err);
                 }
-            }).on("rpc-connect", (srvId: string, name: string, id: string, ...args) => {
+            }).on("rpc-connect", (objId: string, name: string, id: string, ...args) => {
                 if (this.services[id]) {
-                    this.instances[srvId] = new this.services[id](...args);
-                    socket.write(send("rpc-connected", srvId, id));
+                    this.instances[objId] = new this.services[id](...args);
+                    socket.write(send("rpc-connected", objId, id));
                 } else {
                     let err = new Error(`service '${name}' not registered`);
-                    socket.write(send("rpc-connect-error", srvId, sendError(err)));
+                    socket.write(send("rpc-connect-error", objId, sendError(err)));
                 }
-            }).on("rpc-disconnect", (srvId: string) => {
-                delete this.instances[srvId];
-            }).on("rpc-request", (srvId: string, taskId: string, method: string, ...args) => {
-                let service = this.instances[srvId];
+            }).on("rpc-disconnect", (objId: string) => {
+                delete this.instances[objId];
+            }).on("rpc-request", (objId: string, taskId: string, method: string, ...args) => {
+                let service = this.instances[objId];
 
                 Promise.resolve().then(() => {
                     return service[method](...args);
                 }).then(res => {
                     return new Promise(resolve => {
-                        socket.write(send("rpc-response", srvId, taskId, res), () => {
+                        socket.write(send("rpc-response", objId, taskId, res), () => {
                             resolve();
                         });
                     });
                 }).catch(err => {
-                    socket.write(send("rpc-error", srvId, taskId, sendError(err)));
+                    socket.write(send("rpc-error", objId, taskId, sendError(err)));
                 });
             });
         });
@@ -149,8 +152,8 @@ export class ServiceInstance implements ServiceOptions {
                         };
                     }
                 }).on("data", buf => {
-                    for (let [event, srvId, ...data] of receive(buf)) {
-                        this.instances[srvId][eventEmitter].emit(event, ...data);
+                    for (let [event, objId, ...data] of receive(buf)) {
+                        this.instances[objId][eventEmitter].emit(event, ...data);
                     }
                 });
             } else {
@@ -158,15 +161,16 @@ export class ServiceInstance implements ServiceOptions {
             }
         }).then(() => {
             return new Promise((resolve: (value: T) => void, reject) => {
-                let srv = new target;
-                let srvId = srv[serviceId] = uniqid();
+                let srv = new target(...args);
+                let clsId = srv[classId] = target[classId] || (target[classId] = getClassId(target));
+                let objId = srv[objectId] = uniqid();
 
                 srv[eventEmitter] = new EventEmitter;
-                this.instances[srvId] = srv;
-                this.client.write(send("rpc-connect", srvId, target.name, getId(target), ...args));
+                this.instances[objId] = srv;
+                this.client.write(send("rpc-connect", objId, target.name, clsId, ...args));
 
                 srv[eventEmitter].once("rpc-connected", () => {
-                    resolve(proxify(srv, srvId, this));
+                    resolve(proxify(srv, objId, this));
                 }).once("rpc-connect-error", (err: any) => {
                     reject(receiveError(err));
                 }).on("rpc-response", (taskId: string, res: any) => {
@@ -180,10 +184,10 @@ export class ServiceInstance implements ServiceOptions {
 
     disconnect(srv: Function): Promise<void> {
         return new Promise(resolve => {
-            let srvId = srv[serviceId];
-            delete this.instances[srvId];
+            let objId = srv[objectId];
+            delete this.instances[objId];
 
-            this.client.write(send("rpc-disconnect", srvId), () => {
+            this.client.write(send("rpc-disconnect", objId), () => {
                 resolve();
             });
         });
@@ -192,7 +196,7 @@ export class ServiceInstance implements ServiceOptions {
 
 export function createInstance(path: string): ServiceInstance;
 export function createInstance(port: number, host?: string): ServiceInstance;
-export function createInstance(config: ServiceOptions): ServiceInstance;
+export function createInstance(options: ServiceOptions): ServiceInstance;
 export function createInstance(): ServiceInstance {
     let ins = new ServiceInstance;
 
@@ -207,3 +211,5 @@ export function createInstance(): ServiceInstance {
 
     return ins;
 }
+
+export default createInstance;
