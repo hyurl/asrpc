@@ -22,56 +22,60 @@ class ServiceInstance {
             delete this.services[target[util_1.classId]];
     }
     start() {
-        return tslib_1.__awaiter(this, void 0, void 0, function* () {
-            let server = net.createServer();
+        return new Promise((resolve, reject) => tslib_1.__awaiter(this, void 0, void 0, function* () {
+            let server = net.createServer(), resolved = false;
             if (this.path) {
                 yield fs.ensureDir(path.dirname(this.path));
                 if (yield fs.pathExists(this.path)) {
                     yield fs.unlink(this.path);
                 }
-                server.listen(this.path);
+                server.listen(this.path, () => {
+                    (resolved = true) && resolve();
+                });
             }
             else {
-                server.listen(this.port, this.host);
+                server.listen(this.port, this.host, () => {
+                    (resolved = true) && resolve();
+                });
             }
             this.server = server;
-            this.server.on("connection", socket => {
+            this.server.once("error", err => {
+                !resolved && (resolved = true) && reject(err);
+            }).on("error", err => {
+                if (this.errorHandler && resolved) {
+                    this.errorHandler.call(this, err);
+                }
+            }).on("connection", socket => {
                 socket.on("data", buf => {
                     for (let [event, ...data] of util_1.receive(buf)) {
                         socket.emit(event, ...data);
                     }
                 }).on("error", err => {
-                    if (!util_1.isSocketResetError(err)) {
-                        console.error(err);
+                    if (!util_1.isSocketResetError(err) && this.errorHandler) {
+                        this.errorHandler.call(this, err);
                     }
-                }).on("rpc-connect", (objId, name, id, ...args) => {
+                }).on("rpc-connect", (oid, name, id, ...args) => {
                     if (this.services[id]) {
-                        this.instances[objId] = new this.services[id](...args);
-                        socket.write(util_1.send("rpc-connected", objId, id));
+                        this.instances[oid] = new this.services[id](...args);
+                        socket.write(util_1.send("rpc-connected", oid, id));
                     }
                     else {
                         let err = new Error(`service '${name}' not registered`);
-                        socket.write(util_1.send("rpc-connect-error", objId, err));
+                        socket.write(util_1.send("rpc-connect-error", oid, err));
                     }
-                }).on("rpc-disconnect", (objId) => {
-                    delete this.instances[objId];
-                }).on("rpc-request", (objId, taskId, method, ...args) => {
-                    let service = this.instances[objId];
-                    Promise.resolve().then(() => {
-                        return service[method](...args);
-                    }).then(res => {
-                        return new Promise(resolve => {
-                            socket.write(util_1.send("rpc-response", objId, taskId, res), () => {
-                                resolve();
-                            });
-                        });
-                    }).catch(err => {
-                        socket.write(util_1.send("rpc-error", objId, taskId, err));
-                    });
-                });
+                }).on("rpc-disconnect", (oid) => {
+                    delete this.instances[oid];
+                }).on("rpc-request", (oid, taskId, method, ...args) => tslib_1.__awaiter(this, void 0, void 0, function* () {
+                    try {
+                        let service = this.instances[oid], res = yield service[method](...args);
+                        yield new Promise(resolve => socket.write(util_1.send("rpc-response", oid, taskId, res), () => resolve()));
+                    }
+                    catch (err) {
+                        socket.write(util_1.send("rpc-error", oid, taskId, err));
+                    }
+                }));
             });
-            return this;
-        });
+        }));
     }
     close() {
         return new Promise(resolve => this.server.close(() => {
@@ -82,6 +86,7 @@ class ServiceInstance {
     connect(target, ...args) {
         return new Promise((resolve, reject) => {
             if (!this.client) {
+                let resolved = false;
                 let connect = () => {
                     if (this.path) {
                         this.client = net.createConnection(this.path);
@@ -92,9 +97,9 @@ class ServiceInstance {
                 };
                 connect();
                 this.client.once("connect", () => {
-                    resolve();
+                    (resolved = true) && resolve();
                 }).once("error", err => {
-                    reject(err);
+                    !resolved && (resolved = true) && reject(err);
                 }).on("error", err => {
                     if (util_1.isSocketResetError(err)) {
                         this.client.unref();
@@ -116,9 +121,12 @@ class ServiceInstance {
                             }, 50);
                         };
                     }
+                    else if (this.errorHandler && resolved) {
+                        this.errorHandler.call(this, err);
+                    }
                 }).on("data", buf => {
-                    for (let [event, objId, ...data] of util_1.receive(buf)) {
-                        this.instances[objId][util_1.eventEmitter].emit(event, ...data);
+                    for (let [event, oid, ...data] of util_1.receive(buf)) {
+                        this.instances[oid][util_1.eventEmitter].emit(event, ...data);
                     }
                 });
             }
@@ -128,31 +136,37 @@ class ServiceInstance {
         }).then(() => {
             return new Promise((resolve, reject) => {
                 let srv = new target(...args);
-                let clsId = srv[util_1.classId] = target[util_1.classId] || (target[util_1.classId] = util_1.getClassId(target));
-                let objId = srv[util_1.objectId] = shortid_1.generate();
+                let oid = srv[util_1.objectId] = shortid_1.generate();
+                let clsId = srv[util_1.classId] = target[util_1.classId]
+                    || (target[util_1.classId] = util_1.getClassId(target));
                 srv[util_1.eventEmitter] = new events_1.EventEmitter;
-                this.instances[objId] = srv;
-                this.client.write(util_1.send("rpc-connect", objId, target.name, clsId, ...args));
+                this.instances[oid] = srv;
+                this.client.write(util_1.send("rpc-connect", oid, target.name, clsId, ...args));
                 srv[util_1.eventEmitter].once("rpc-connected", () => {
-                    resolve(util_1.proxify(srv, objId, this));
+                    resolve(util_1.proxify(srv, oid, this));
                 }).once("rpc-connect-error", (err) => {
                     reject(err);
                 }).on("rpc-response", (taskId, res) => {
-                    util_1.tasks[taskId].success(res);
+                    util_1.tasks[taskId].resolve(res);
                 }).on("rpc-error", (taskId, err) => {
-                    util_1.tasks[taskId].error(err);
+                    util_1.tasks[taskId].reject(err);
                 });
             });
         });
     }
-    disconnect(srv) {
+    disconnect(service) {
         return new Promise(resolve => {
-            let objId = srv[util_1.objectId];
-            delete this.instances[objId];
-            this.client.write(util_1.send("rpc-disconnect", objId), () => {
+            let oid = service[util_1.objectId];
+            if (!oid)
+                return resolve();
+            delete this.instances[oid];
+            this.client.write(util_1.send("rpc-disconnect", oid), () => {
                 resolve();
             });
         });
+    }
+    onError(handler) {
+        this.errorHandler = handler;
     }
 }
 exports.ServiceInstance = ServiceInstance;

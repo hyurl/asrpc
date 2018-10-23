@@ -15,7 +15,10 @@ function getClassId(target) {
 }
 exports.getClassId = getClassId;
 function send(event, uniqid, ...data) {
-    return Buffer.concat([encoded_buffer_1.encode([event, uniqid, ...data]), Buffer.from("\r\n\r\n")]);
+    return Buffer.concat([
+        encoded_buffer_1.encode([event, uniqid, ...data]),
+        Buffer.from("\r\n\r\n")
+    ]);
 }
 exports.send = send;
 function receive(buf) {
@@ -30,7 +33,8 @@ exports.receive = receive;
 function proxify(srv, srvId, ins) {
     return new Proxy(srv, {
         get: (srv, prop) => {
-            if (!(prop in srv.constructor.prototype) || typeof srv[prop] != "function") {
+            if (!(prop in srv.constructor.prototype)
+                || typeof srv[prop] != "function") {
                 return srv[prop];
             }
             else if (!srv[prop][proxified]) {
@@ -39,16 +43,16 @@ function proxify(srv, srvId, ins) {
                         let taskId = shortid_1.generate();
                         let timer = setTimeout(() => {
                             let num = Math.round(ins.timeout / 1000), unit = num === 1 ? "second" : "seconds";
-                            reject(new Error(`rpc request timeout after ${num} ${unit}`));
+                            reject(new Error(`RPC request timeout after ${num} ${unit}`));
                         }, ins.timeout);
                         ins["client"].write(send("rpc-request", srvId, taskId, prop, ...args));
                         exports.tasks[taskId] = {
-                            success: (res) => {
+                            resolve: (res) => {
                                 resolve(res);
                                 clearTimeout(timer);
                                 delete exports.tasks[taskId];
                             },
-                            error: (err) => {
+                            reject: (err) => {
                                 reject(err);
                                 clearTimeout(timer);
                                 delete exports.tasks[taskId];

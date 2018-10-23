@@ -94,7 +94,7 @@ and `client.js` will output:
 
 ### `createInstance`
 
-This is the only useful function in JavaScript that exposed by this package, 
+This is the only useful function in JavaScript that exposed from this package, 
 other objects and interfaces are for TypeScript programming.
 
 **signatures:**
@@ -112,12 +112,12 @@ must be aware that Windows named pipe has no support in cluster mode.
 
 If `port` is provided, the instance binds to an network port, and communicate 
 through network card. This is mainly used when the server and client are run in 
-different machine, or in cluster on Windows. If the server and client are in 
-different machine (even under different domain), the `host` option must be 
+different machines, or in cluster on Windows. If the server and client are in 
+different machines (even under different domain), the `host` option must be 
 provided (on the client side, optional on the server side).
 
-If `options` is provided, it is an object that contains (all optional) `path`, 
-`port`, `host` and `timeout`, the first three are corresponding to the 
+If `options` is provided, it is an object that contains `path`, `port`, `host` 
+and `timeout` (all optional), the first three are corresponding to the 
 individual options talked above, while `timeout` is a number in milliseconds and
 the default value is `5000`.
 
@@ -130,67 +130,71 @@ interface.
 
 #### `ServiceInstance.prototype.register(target: Function): void`
 
-This method registers a class (`target`), any ordinary JavaScript class (either 
-in ES6 and ES5), as an RPC service. It doesn't do any other job, just make a 
-reference in the internal map with to a unique-supposed string id generated 
-according to the class definition itself.
+Registers an ordinary JavaScript class (either in ES6 and ES5) as an RPC service.
+This method doesn't do any other job, just make a reference in the internal map 
+with a unique-supposed string id generated according to the class definition 
+itself.
 
-**This method should only be called on the server side.**
+*This method should only be called on the server side.*
 
 #### `ServiceInstance.prototype.deregister(target: Function): void`
 
-This method de-registers the class (`target`) bound by `register`, once a class 
-is de-registered, it can no longer be connected on the client.
+De-registers the target class bound by `register()`. Once a class is 
+de-registered, it can no longer be connected on the client.
 
-**This method should only be called on the server side.**
+*This method should only be called on the server side.*
 
 #### `ServiceInstance.prototype.start(): Promise<void>`
 
-This method starts the RPC server, listening for connection and requests from 
-a client.
+Starts the service server, listening for connection and requests from a client.
 
-**This method can only be called on the server side.**
+*This method can only be called on the server side.*
 
 #### `ServiceInstance.prototype.close(): Promise<void>`
 
-This method closes the RPC server shipped by the current instance, once the 
-server is closed, no more connection and requests should be sent.
+Closes the service server shipped by the current instance. Once the server is 
+closed, no more connections and requests should be delivered.
 
-**This method can only be called on the server side.**
+*This method can only be called on the server side.*
 
 #### `ServiceInstance.prototype.connect<T>(target: Function, ...args: any[]): Promise<T>`
 
-This method connects to the RPC server and returns a new instance of `target`. 
-The `args` options, if provided, is any number of arguments passed to the class 
-constructor. When the service is connected, they will be assigned to the 
-instance on the server as well.
+Connects to the service server and returns a new instance of `target`. If `args`
+is provided, is any number of arguments passed to the class constructor. When 
+the service is connected, they will be assigned to the instance on the server as
+well.
 
-**This method can only be called on the client side.**
+*This method can only be called on the client side.*
 
 #### `ServiceInstance.prototype.disconnect(service: any): Promise<void>`
 
-This method disconnects the given service returned by `connect()`, once a 
-service is disconnected, no more operations should be called on it.
+Disconnects the given service returned by `connect()`. Once a service is 
+disconnected, no more operations should be called on it.
 
-**This method can only be called on the client side.**
+*This method can only be called on the client side.*
+
+#### `ServiceInstance.prototype.onError(handler: (err: Error) => void): void`
+
+Binds an error handler to be invoked whenever an error occurred in asynchronous 
+operations which can't be caught during run-time.
 
 ## Efficiency
 
 Once the `start()` method is called, a Domain/TCP socket will be created, and 
-the first time `connect()` is called, a socket client will be created bound to 
-the client instance, ONLY once client will be created in one instance, every 
-connected service shares this client. There is no need and no reason also no 
-good to separate client for each service. The requests an responses are 
-distinguished by the service itself, not the socket, you don't have to worry 
-connecting to much services might causing multiple connections, it will not.
+the first time `connect()` is called, a socket client will be created, and ONLY 
+one client will be created in one `ServiceInstance`, every connected service 
+shares this client. There is no need and no reason to separate client for each 
+service. The requests an responses are distinguished by the service itself, you 
+don't have to worry connecting to much services might causing multiple 
+connections, it will not.
 
-## Supported Types
+## Supported Data Types
 
 Since the operation will be delivered to the server rather than calling locally,
 so not all JavaScript types are supported through socket communication, but this
 package uses [encoded-buffer](https://github.com/hyurl/encoded-buffer) to 
-transfer data in socket, it can deliver many ordinary types through socket 
-(more than `bson`), currently, these types are supported:
+transfer data in socket, it supports many ordinary types (more than `bson`), 
+currently, these types are supported:
 
 - `string`
 - `number`
@@ -200,7 +204,7 @@ transfer data in socket, it can deliver many ordinary types through socket
 - `undefined`
 - `null`
 - `object`
-- `Array`
+- `Array` only the enumerable elements will be transferred.
 - `Buffer`
 - `Date`
 - `Error`
@@ -212,20 +216,25 @@ the returning value should match one of these types as well.
 
 ## Error Handle
 
-If any error occurred on the server side, the error will be send back to the 
-client, and it will be just like the error the occurred on the client side, you 
-will not tell any difference between them, so just focus on your design as usual.
+If any error occurred on the server side in a service, the error will be send 
+back to the client, and it will be just like the error the occurred on the 
+client side, you will not tell any difference between them, so just focus on 
+your design as usual.
+
+But not all errors can't be caught, like an error occurred inside the socket 
+itself, these errors can be handled using method `onError()`. 
 
 ## Warning
 
-Although this package will try to bring the most familiar experience for you 
+Although this package will try to bring the most familiar experience for your 
 code to use as RPC service as used ordinarily. BUT, due to the program runs in 
-different, so as the instance. The reason why you can access methods on the 
-client but fetch results from the server is that this package wrapped your 
+different processes, so as instances. The reason why you can access methods on 
+the client but fetch results from the server is that this package wrapped your 
 client service in a `Proxy` constructor, and when you call a method, the 
-operation will be send to the server and call the instance on the server. But 
-only the methods can do this, that means if you try to access other properties, 
-you will get the value in the client service, instead of the one on the service.
+operation will be delivered to the server and call the version on the server. 
+But only the methods can do this, that means if you try to access other 
+properties, you will get the value in the local service, instead of the one on 
+the server.
 
 So it's recommended the properties, except constants or `readonly` properties, 
 should be set private or protected, since they should only be accessed inside 
@@ -239,15 +248,15 @@ properties, define a method to do so.
 class TestService {
     constructor() {
         this.name = "TestService"; // this is a readonly property
-        this.str = "Hello, World!";
+        this.text = "Hello, World!";
     }
 
-    async set(str) {
-        this.str = str;
+    async set(prop, value) {
+        this[prop] = value;
     }
 
-    async get() {
-        return this.str;
+    async get(prop) {
+        return this[prop];
     }
 }
 
@@ -257,9 +266,9 @@ class TestService {
     var srv = await ins.connect(TestService);
 
     console.log(srv.name); // TestService
-    console.log(await srv.get()); // Hello, World!
-    await srv.set("Hi, there!");
-    console.log(srv.str); // still: Hello, World!
-    console.log(await srv.get()); // Hi, there!
+    console.log(await srv.get("text")); // Hello, World!
+    await srv.set("text", "Hi, there!");
+    console.log(srv.text); // still: Hello, World!
+    console.log(await srv.get("text")); // Hi, there!
 })();
 ```

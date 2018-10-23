@@ -25,6 +25,7 @@ export interface ServiceOptions {
     timeout?: number;
 }
 
+/** A type that represents a service instance shipped on the server. */
 export class ServiceInstance implements ServiceOptions {
     host?: string;
     port?: number;
@@ -32,78 +33,114 @@ export class ServiceInstance implements ServiceOptions {
     timeout: number = 5000;
     private server: net.Server;
     private client: net.Socket;
+    private errorHandler: (err: Error) => void;
     private services: {
         [id: string]: ServiceClass<any>
     } = {};
     private instances: {
-        [objId: string]: any
+        [oid: string]: any
     } = {};
 
+    /**
+     * Registers an ordinary JavaScript class (either in ES6 and ES5) as an RPC 
+     * service.
+     */
     register<T>(target: ServiceClass<T>): void {
         target[classId] = getClassId(target);
         this.services[target[classId]] = target;
     }
 
+    /**
+     * De-registers the target class bound by `register()`. Once a class is 
+     * de-registered, it can no longer be connected on the client.
+     */
     deregister<T>(target: ServiceClass<T>): void {
         if (target[classId])
             delete this.services[target[classId]];
     }
 
-    async start(): Promise<this> {
-        let server: net.Server = net.createServer();
+    /** 
+     * Starts the service server, listening for connection and requests from a 
+     * client.
+     */
+    start(): Promise<void> {
+        return new Promise(async (resolve: (value?: any) => void, reject) => {
+            let server: net.Server = net.createServer(),
+                resolved = false;
 
-        if (this.path) {
-            await fs.ensureDir(path.dirname(this.path));
+            if (this.path) {
+                await fs.ensureDir(path.dirname(this.path));
 
-            if (await fs.pathExists(this.path)) {
-                await fs.unlink(this.path);
+                if (await fs.pathExists(this.path)) {
+                    await fs.unlink(this.path);
+                }
+
+                server.listen(this.path, () => {
+                    (resolved = true) && resolve();
+                });
+            } else {
+                server.listen(this.port, this.host, () => {
+                    (resolved = true) && resolve();
+                });
             }
 
-            server.listen(this.path);
-        } else {
-            server.listen(this.port, this.host);
-        }
-
-        this.server = server;
-        this.server.on("connection", socket => {
-            socket.on("data", buf => {
-                for (let [event, ...data] of receive(buf)) {
-                    socket.emit(event, ...data);
-                }
+            this.server = server;
+            this.server.once("error", err => {
+                !resolved && (resolved = true) && reject(err);
             }).on("error", err => {
-                if (!isSocketResetError(err)) {
-                    console.error(err);
+                if (this.errorHandler && resolved) {
+                    this.errorHandler.call(this, err);
                 }
-            }).on("rpc-connect", (objId: string, name: string, id: string, ...args) => {
-                if (this.services[id]) {
-                    this.instances[objId] = new this.services[id](...args);
-                    socket.write(send("rpc-connected", objId, id));
-                } else {
-                    let err = new Error(`service '${name}' not registered`);
-                    socket.write(send("rpc-connect-error", objId, err));
-                }
-            }).on("rpc-disconnect", (objId: string) => {
-                delete this.instances[objId];
-            }).on("rpc-request", (objId: string, taskId: string, method: string, ...args) => {
-                let service = this.instances[objId];
+            }).on("connection", socket => {
+                socket.on("data", buf => {
+                    for (let [event, ...data] of receive(buf)) {
+                        socket.emit(event, ...data);
+                    }
+                }).on("error", err => {
+                    if (!isSocketResetError(err) && this.errorHandler) {
+                        this.errorHandler.call(this, err);
+                    }
+                }).on("rpc-connect", (
+                    oid: string,
+                    name: string,
+                    id: string,
+                    ...args
+                ) => {
+                    if (this.services[id]) {
+                        this.instances[oid] = new this.services[id](...args);
+                        socket.write(send("rpc-connected", oid, id));
+                    } else {
+                        let err = new Error(`service '${name}' not registered`);
+                        socket.write(send("rpc-connect-error", oid, err));
+                    }
+                }).on("rpc-disconnect", (oid: string) => {
+                    delete this.instances[oid];
+                }).on("rpc-request", async (
+                    oid: string,
+                    taskId: string,
+                    method: string,
+                    ...args
+                ) => {
+                    try {
+                        let service = this.instances[oid],
+                            res = await service[method](...args);
 
-                Promise.resolve().then(() => {
-                    return service[method](...args);
-                }).then(res => {
-                    return new Promise(resolve => {
-                        socket.write(send("rpc-response", objId, taskId, res), () => {
-                            resolve();
-                        });
-                    });
-                }).catch(err => {
-                    socket.write(send("rpc-error", objId, taskId, err));
+                        await new Promise(resolve => socket.write(
+                            send("rpc-response", oid, taskId, res),
+                            () => resolve()
+                        ));
+                    } catch (err) {
+                        socket.write(send("rpc-error", oid, taskId, err));
+                    }
                 });
             });
         });
-
-        return this;
     }
 
+    /**
+     * Closes the service server shipped by the current instance. Once the 
+     * server is closed, no more connections and requests should be delivered.
+     */
     close(): Promise<void> {
         return new Promise(resolve => this.server.close(() => {
             this.server.unref();
@@ -111,9 +148,16 @@ export class ServiceInstance implements ServiceOptions {
         }));
     }
 
+    /**
+     * Connects to the service server and returns a new instance of `target`. 
+     * @param args If provided, is any number of arguments passed to the class 
+     * constructor. When the service is connected, they will be assigned to the 
+     * instance on the server as well.
+     */
     connect<T>(target: ServiceClass<T>, ...args: any[]): Promise<T> {
         return new Promise((resolve, reject) => {
             if (!this.client) {
+                let resolved = false;
                 let connect = () => {
                     if (this.path) {
                         this.client = net.createConnection(this.path);
@@ -125,9 +169,9 @@ export class ServiceInstance implements ServiceOptions {
                 connect();
 
                 this.client.once("connect", () => {
-                    resolve();
+                    (resolved = true) && resolve();
                 }).once("error", err => {
-                    reject(err);
+                    !resolved && (resolved = true) && reject(err);
                 }).on("error", err => {
                     if (isSocketResetError(err)) {
                         this.client.unref();
@@ -148,10 +192,12 @@ export class ServiceInstance implements ServiceOptions {
                                 }
                             }, 50);
                         };
+                    } else if (this.errorHandler && resolved) {
+                        this.errorHandler.call(this, err);
                     }
                 }).on("data", buf => {
-                    for (let [event, objId, ...data] of receive(buf)) {
-                        this.instances[objId][eventEmitter].emit(event, ...data);
+                    for (let [event, oid, ...data] of receive(buf)) {
+                        this.instances[oid][eventEmitter].emit(event, ...data);
                     }
                 });
             } else {
@@ -160,40 +206,79 @@ export class ServiceInstance implements ServiceOptions {
         }).then(() => {
             return new Promise((resolve: (value: T) => void, reject) => {
                 let srv = new target(...args);
-                let clsId = srv[classId] = target[classId] || (target[classId] = getClassId(target));
-                let objId = srv[objectId] = uniqid();
+                let oid = srv[objectId] = uniqid();
+                let clsId = srv[classId] = target[classId]
+                    || (target[classId] = getClassId(target));
 
                 srv[eventEmitter] = new EventEmitter;
-                this.instances[objId] = srv;
-                this.client.write(send("rpc-connect", objId, target.name, clsId, ...args));
+                this.instances[oid] = srv;
+                this.client.write(
+                    send("rpc-connect", oid, target.name, clsId, ...args)
+                );
 
                 srv[eventEmitter].once("rpc-connected", () => {
-                    resolve(proxify(srv, objId, this));
+                    resolve(proxify(srv, oid, this));
                 }).once("rpc-connect-error", (err: any) => {
                     reject(err);
                 }).on("rpc-response", (taskId: string, res: any) => {
-                    tasks[taskId].success(res);
+                    tasks[taskId].resolve(res);
                 }).on("rpc-error", (taskId: string, err: any) => {
-                    tasks[taskId].error(err);
+                    tasks[taskId].reject(err);
                 });
             });
         });
     }
 
-    disconnect(srv: any): Promise<void> {
+    /**
+     * Disconnects the given service returned by `connect()`. Once a service is 
+     * disconnected, no more operations should be called on it.
+     */
+    disconnect(service: any): Promise<void> {
         return new Promise(resolve => {
-            let objId = srv[objectId];
-            delete this.instances[objId];
+            let oid: string = service[objectId];
 
-            this.client.write(send("rpc-disconnect", objId), () => {
+            if (!oid) return resolve();
+
+            delete this.instances[oid];
+            this.client.write(send("rpc-disconnect", oid), () => {
                 resolve();
             });
         });
     }
+
+    /**
+     * Binds an error handler to be invoked whenever an error occurred in 
+     * asynchronous operations which can't be caught during run-time.
+     */
+    onError(handler: (err: Error) => void) {
+        this.errorHandler = handler;
+    }
 }
 
+/**
+ * Creates a `ServiceInstance` according to the given arguments.
+ * @param path If provided, the instance binds to a UNIX domain socket or 
+ *  **named pipe** on Windows, and communicate via IPC channels. This is very 
+ *  useful and efficient when the client and server are both run in the same 
+ *  machine. BUT must be aware that Windows named pipe has no support in cluster 
+ *  mode.
+ */
 export function createInstance(path: string): ServiceInstance;
+/**
+ * @param port If provided, the instance binds to an network port, and 
+ *  communicate through network card. This is mainly used when the server and 
+ *  client are run in different machines, or in cluster on Windows.
+ * @param host If the server and client are in different machine (even under 
+ *  different domain), this option must be provided (on the client side, 
+ *  optional on the server side).
+ */
 export function createInstance(port: number, host?: string): ServiceInstance;
+/**
+ * @param options If provided, it is an object that contains `path`, `port`, 
+ *  `host` and `timeout` (all optional), the first three are corresponding to 
+ *  the individual options talked above, while `timeout` is a number in 
+ *  milliseconds and the default value is `5000`.
+ */
 export function createInstance(options: ServiceOptions): ServiceInstance;
 export function createInstance(): ServiceInstance {
     let ins = new ServiceInstance;
