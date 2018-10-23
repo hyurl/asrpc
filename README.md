@@ -184,6 +184,38 @@ good to separate client for each service. The requests an responses are
 distinguished by the service itself, not the socket, you don't have to worry 
 connecting to much services might causing multiple connections, it will not.
 
+## Supported Types
+
+Since the operation will be delivered to the server rather than calling locally,
+so not all JavaScript types are supported through socket communication, but this
+package uses [encoded-buffer](https://github.com/hyurl/encoded-buffer) to 
+transfer data in socket, it can deliver many ordinary types through socket 
+(more than `bson`), currently, these types are supported:
+
+- `string`
+- `number`
+- `boolean`
+- `symbol` Not the same symbol as original, just a new symbol with the same 
+    description.
+- `undefined`
+- `null`
+- `object`
+- `Array`
+- `Buffer`
+- `Date`
+- `Error`
+- `RegExp`
+
+Any other types, will be transferred as an ordinary object or not transferred at
+all. Any method called remotely should only accept these types of arguments, and 
+the returning value should match one of these types as well.
+
+## Error Handle
+
+If any error occurred on the server side, the error will be send back to the 
+client, and it will be just like the error the occurred on the client side, you 
+will not tell any difference between them, so just focus on your design as usual.
+
 ## Warning
 
 Although this package will try to bring the most familiar experience for you 
