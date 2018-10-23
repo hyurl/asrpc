@@ -125,10 +125,10 @@ the default value is `5000`.
 
 A type that represents a service instance shipped on the server. This is a class 
 exposed in JavaScript as well, but not recommended in use, it should only for 
-typing usage, since function `createInstance` provides a more suitable 
+typing usage, since function `createInstance()` provides a more suitable 
 interface.
 
-#### `ServiceInstance.prototype.register(target: Function): void`
+#### `ServiceInstance.prototype.register<T>(target: ServiceClass<T>): void`
 
 Registers an ordinary JavaScript class (either in ES6 and ES5) as an RPC service.
 This method doesn't do any other job, just make a reference in the internal map 
@@ -137,7 +137,7 @@ itself.
 
 *This method should only be called on the server side.*
 
-#### `ServiceInstance.prototype.deregister(target: Function): void`
+#### `ServiceInstance.prototype.deregister<T>(target: ServiceClass<T>): void`
 
 De-registers the target class bound by `register()`. Once a class is 
 de-registered, it can no longer be connected on the client.
@@ -146,7 +146,7 @@ de-registered, it can no longer be connected on the client.
 
 #### `ServiceInstance.prototype.start(): Promise<void>`
 
-Starts the service server, listening for connection and requests from a client.
+Starts the service server, listening for connections and requests from a client.
 
 *This method can only be called on the server side.*
 
@@ -157,10 +157,10 @@ closed, no more connections and requests should be delivered.
 
 *This method can only be called on the server side.*
 
-#### `ServiceInstance.prototype.connect<T>(target: Function, ...args: any[]): Promise<T>`
+#### `ServiceInstance.prototype.connect<T>(target: ServiceClass<T>, ...args: any[]): Promise<T>`
 
 Connects to the service server and returns a new instance of `target`. If `args`
-is provided, is any number of arguments passed to the class constructor. When 
+is provided, it is any number of arguments passed to the class constructor. When 
 the service is connected, they will be assigned to the instance on the server as
 well.
 
@@ -184,7 +184,7 @@ Once the `start()` method is called, a Domain/TCP socket will be created, and
 the first time `connect()` is called, a socket client will be created, and ONLY 
 one client will be created in one `ServiceInstance`, every connected service 
 shares this client. There is no need and no reason to separate client for each 
-service. The requests an responses are distinguished by the service itself, you 
+service. The requests and responses are distinguished by the service itself, you 
 don't have to worry connecting to much services might causing multiple 
 connections, it will not.
 
@@ -193,13 +193,13 @@ connections, it will not.
 Since the operation will be delivered to the server rather than calling locally,
 so not all JavaScript types are supported through socket communication, but this
 package uses [encoded-buffer](https://github.com/hyurl/encoded-buffer) to 
-transfer data in socket, it supports many ordinary types (more than `bson`), 
-currently, these types are supported:
+transfer data in socket, it supports many common types (more than `JSON`, 
+`BSON`), currently, these types are supported:
 
 - `string`
 - `number`
 - `boolean`
-- `symbol` Not the same symbol as original, just a new symbol with the same 
+- `symbol` not the same symbol as original, just a new symbol with the same 
     description.
 - `undefined`
 - `null`
@@ -210,7 +210,7 @@ currently, these types are supported:
 - `Error`
 - `RegExp`
 
-Any other types, will be transferred as an ordinary object or not transferred at
+Any other types, will be transferred as an standard object or not transferred at
 all. Any method called remotely should only accept these types of arguments, and 
 the returning value should match one of these types as well.
 
@@ -218,21 +218,21 @@ the returning value should match one of these types as well.
 
 If any error occurred on the server side in a service, the error will be send 
 back to the client, and it will be just like the error the occurred on the 
-client side, you will not tell any difference between them, so just focus on 
+client side, you will not see any difference between them, so just focus on 
 your design as usual.
 
 But not all errors can't be caught, like an error occurred inside the socket 
-itself, these errors can be handled using method `onError()`. 
+itself, these errors can be handled via `onError()` method. 
 
 ## Warning
 
 Although this package will try to bring the most familiar experience for your 
 code to use as RPC service as used ordinarily. BUT, due to the program runs in 
-different processes, so as instances. The reason why you can access methods on 
+different processes, so are instances. The reason why you can access methods on 
 the client but fetch results from the server is that this package wrapped your 
 client service in a `Proxy` constructor, and when you call a method, the 
-operation will be delivered to the server and call the version on the server. 
-But only the methods can do this, that means if you try to access other 
+operation will be delivered to the server and call the version on the server 
+instead. But only the methods can do this, that means if you try to access other 
 properties, you will get the value in the local service, instead of the one on 
 the server.
 

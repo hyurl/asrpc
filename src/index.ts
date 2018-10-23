@@ -60,7 +60,7 @@ export class ServiceInstance implements ServiceOptions {
     }
 
     /** 
-     * Starts the service server, listening for connection and requests from a 
+     * Starts the service server, listening for connections and requests from a 
      * client.
      */
     start(): Promise<void> {
