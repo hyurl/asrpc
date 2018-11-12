@@ -6,6 +6,7 @@ const path = require("path");
 const fs = require("fs-extra");
 const events_1 = require("events");
 const shortid_1 = require("shortid");
+const isSocketResetError = require("is-socket-reset-error");
 const util_1 = require("./util");
 class ServiceInstance {
     constructor() {
@@ -51,7 +52,7 @@ class ServiceInstance {
                         socket.emit(event, ...data);
                     }
                 }).on("error", err => {
-                    if (!util_1.isSocketResetError(err) && this.errorHandler) {
+                    if (!isSocketResetError(err) && this.errorHandler) {
                         this.errorHandler.call(this, err);
                     }
                 }).on("rpc-connect", (oid, name, id, ...args) => {
@@ -101,7 +102,7 @@ class ServiceInstance {
                 }).once("error", err => {
                     !resolved && (resolved = true) && reject(err);
                 }).on("error", err => {
-                    if (util_1.isSocketResetError(err)) {
+                    if (isSocketResetError(err)) {
                         this.client.unref();
                         let times = 0;
                         let reconnect = () => {

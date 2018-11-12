@@ -217,7 +217,7 @@ the returning value should match one of these types as well.
 ## Error Handle
 
 If any error occurred on the server side in a service, the error will be send 
-back to the client, and it will be just like the error the occurred on the 
+back to the client, and it will be just like the error that occurred on the 
 client side, you will not see any difference between them, so just focus on 
 your design as usual.
 

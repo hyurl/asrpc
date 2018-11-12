@@ -3,6 +3,7 @@ import * as path from "path";
 import * as fs from "fs-extra";
 import { EventEmitter } from "events";
 import { generate as uniqid } from "shortid";
+import isSocketResetError = require("is-socket-reset-error");
 import {
     getClassId,
     send,
@@ -11,7 +12,6 @@ import {
     proxify,
     objectId,
     eventEmitter,
-    isSocketResetError,
     absPath,
     classId
 } from './util';

@@ -76,12 +76,6 @@ function proxify(srv, srvId, ins) {
     });
 }
 exports.proxify = proxify;
-function isSocketResetError(err) {
-    return err instanceof Error
-        && (err["code"] == "ECONNRESET"
-            || /socket.*(ended|closed)/.test(err.message));
-}
-exports.isSocketResetError = isSocketResetError;
 function absPath(filename) {
     if (!path.isAbsolute(filename)) {
         filename = path.resolve(os.tmpdir(), ".asrpc", filename);

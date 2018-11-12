@@ -92,12 +92,6 @@ export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
     });
 }
 
-export function isSocketResetError(err) {
-    return err instanceof Error
-        && (err["code"] == "ECONNRESET"
-            || /socket.*(ended|closed)/.test(err.message));
-}
-
 export function absPath(filename: string): string {
     // resolve path to be absolute
     if (!path.isAbsolute(filename)) {
