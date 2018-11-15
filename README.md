@@ -188,12 +188,16 @@ service. The requests and responses are distinguished by the service itself, you
 don't have to worry connecting to much services might causing multiple 
 connections, it will not.
 
+The socket channel sends minimal data (numbers starts from `0`) to explain which
+service and method is being called, along with user input data, to provide the 
+best performance of data transmission.
+
 ## Supported Data Types
 
 Since the operation will be delivered to the server rather than calling locally,
 so not all JavaScript types are supported through socket communication, but this
 package uses [encoded-buffer](https://github.com/hyurl/encoded-buffer) to 
-transfer data in socket, it supports many common types (more than `JSON`, 
+transfer data in socket, it supports many common types (more than `JSON` and 
 `BSON`), currently, these types are supported:
 
 - `string`
@@ -236,7 +240,7 @@ instead. But only the methods can do this, that means if you try to access other
 properties, you will get the value in the local service, instead of the one on 
 the server.
 
-So it's recommended the properties, except constants or `readonly` properties, 
+So it's recommended for properties, except constants or `readonly` properties, 
 should be set private or protected, since they should only be accessed inside 
 the class itself. There is not point you will access those properties on the 
 server side, since the instance is handled by `ServiceInstance`, not by human. 

@@ -2,7 +2,6 @@ import * as net from "net";
 import * as path from "path";
 import * as fs from "fs-extra";
 import { EventEmitter } from "events";
-import { generate as uniqid } from "shortid";
 import isSocketResetError = require("is-socket-reset-error");
 import {
     getClassId,
@@ -13,7 +12,8 @@ import {
     objectId,
     eventEmitter,
     absPath,
-    classId
+    classId,
+    RPCEvents
 } from './util';
 
 export type ServiceClass<T> = new (...args) => T;
@@ -24,6 +24,8 @@ export interface ServiceOptions {
     path?: string;
     timeout?: number;
 }
+
+var oid = 0;
 
 /** A type that represents a service instance shipped on the server. */
 export class ServiceInstance implements ServiceOptions {
@@ -38,7 +40,7 @@ export class ServiceInstance implements ServiceOptions {
         [id: string]: ServiceClass<any>
     } = {};
     private instances: {
-        [oid: string]: any
+        [oid: number]: any
     } = {};
 
     /**
@@ -51,8 +53,8 @@ export class ServiceInstance implements ServiceOptions {
     }
 
     /**
-     * De-registers the target class bound by `register()`. Once a class is 
-     * de-registered, it can no longer be connected on the client.
+     * Deregisters the target class bound by `register()`. Once a class is 
+     * deregistered, it can no longer be connected on the client.
      */
     deregister<T>(target: ServiceClass<T>): void {
         if (target[classId])
@@ -94,30 +96,31 @@ export class ServiceInstance implements ServiceOptions {
             }).on("connection", socket => {
                 socket.on("data", buf => {
                     for (let [event, ...data] of receive(buf)) {
-                        socket.emit(event, ...data);
+                        event = isNaN(<any>event) ? event : RPCEvents[event];
+                        socket.emit(<string>event, ...data);
                     }
                 }).on("error", err => {
                     if (!isSocketResetError(err) && this.errorHandler) {
                         this.errorHandler.call(this, err);
                     }
-                }).on("rpc-connect", (
-                    oid: string,
+                }).on(RPCEvents[0], (
+                    oid: number,
                     name: string,
                     id: string,
                     ...args
                 ) => {
                     if (this.services[id]) {
                         this.instances[oid] = new this.services[id](...args);
-                        socket.write(send("rpc-connected", oid, id));
+                        socket.write(send(RPCEvents.CONNECTED, oid, id));
                     } else {
                         let err = new Error(`service '${name}' not registered`);
-                        socket.write(send("rpc-connect-error", oid, err));
+                        socket.write(send(RPCEvents.CONNECT_ERROR, oid, err));
                     }
-                }).on("rpc-disconnect", (oid: string) => {
+                }).on(RPCEvents[3], (oid: number) => {
                     delete this.instances[oid];
-                }).on("rpc-request", async (
-                    oid: string,
-                    taskId: string,
+                }).on(RPCEvents[4], async (
+                    oid: number,
+                    taskId: number,
                     method: string,
                     ...args
                 ) => {
@@ -126,11 +129,11 @@ export class ServiceInstance implements ServiceOptions {
                             res = await service[method](...args);
 
                         await new Promise(resolve => socket.write(
-                            send("rpc-response", oid, taskId, res),
+                            send(RPCEvents.RESPONSE, oid, taskId, res),
                             () => resolve()
                         ));
                     } catch (err) {
-                        socket.write(send("rpc-error", oid, taskId, err));
+                        socket.write(send(RPCEvents.ERROR, oid, taskId, err));
                     }
                 });
             });
@@ -197,6 +200,7 @@ export class ServiceInstance implements ServiceOptions {
                     }
                 }).on("data", buf => {
                     for (let [event, oid, ...data] of receive(buf)) {
+                        event = isNaN(<any>event) ? event : RPCEvents[event];
                         this.instances[oid][eventEmitter].emit(event, ...data);
                     }
                 });
@@ -206,25 +210,31 @@ export class ServiceInstance implements ServiceOptions {
         }).then(() => {
             return new Promise((resolve: (value: T) => void, reject) => {
                 let srv = new target(...args);
-                let oid = srv[objectId] = uniqid();
-                let clsId = srv[classId] = target[classId]
+                let _oid = oid;
+                let clsId: string = srv[classId] = target[classId]
                     || (target[classId] = getClassId(target));
+
+                srv[objectId] = oid;
 
                 srv[eventEmitter] = new EventEmitter;
                 this.instances[oid] = srv;
                 this.client.write(
-                    send("rpc-connect", oid, target.name, clsId, ...args)
+                    send(RPCEvents.CONNECT, oid, target.name, clsId, ...args)
                 );
 
-                srv[eventEmitter].once("rpc-connected", () => {
-                    resolve(proxify(srv, oid, this));
-                }).once("rpc-connect-error", (err: any) => {
+                srv[eventEmitter].once(RPCEvents[1], () => {
+                    resolve(proxify(srv, _oid, this));
+                }).once(RPCEvents[2], (err: any) => {
                     reject(err);
-                }).on("rpc-response", (taskId: string, res: any) => {
+                }).on(RPCEvents[5], (taskId: number, res: any) => {
                     tasks[taskId].resolve(res);
-                }).on("rpc-error", (taskId: string, err: any) => {
+                }).on(RPCEvents[6], (taskId: number, err: any) => {
                     tasks[taskId].reject(err);
                 });
+
+                oid++;
+                if (oid === Number.MAX_SAFE_INTEGER)
+                    oid = 0;
             });
         });
     }
@@ -240,7 +250,7 @@ export class ServiceInstance implements ServiceOptions {
             if (!oid) return resolve();
 
             delete this.instances[oid];
-            this.client.write(send("rpc-disconnect", oid), () => {
+            this.client.write(send(RPCEvents.DISCONNECT, oid), () => {
                 resolve();
             });
         });

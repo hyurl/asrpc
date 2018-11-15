@@ -1,6 +1,5 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const shortid_1 = require("shortid");
 const hash = require("object-hash");
 const path = require("path");
 const os = require("os");
@@ -9,14 +8,25 @@ exports.classId = Symbol("classId");
 exports.objectId = Symbol("objectId");
 exports.eventEmitter = Symbol("eventEmitter");
 exports.tasks = {};
+var RPCEvents;
+(function (RPCEvents) {
+    RPCEvents[RPCEvents["CONNECT"] = 0] = "CONNECT";
+    RPCEvents[RPCEvents["CONNECTED"] = 1] = "CONNECTED";
+    RPCEvents[RPCEvents["CONNECT_ERROR"] = 2] = "CONNECT_ERROR";
+    RPCEvents[RPCEvents["DISCONNECT"] = 3] = "DISCONNECT";
+    RPCEvents[RPCEvents["REQUEST"] = 4] = "REQUEST";
+    RPCEvents[RPCEvents["RESPONSE"] = 5] = "RESPONSE";
+    RPCEvents[RPCEvents["ERROR"] = 6] = "ERROR";
+})(RPCEvents = exports.RPCEvents || (exports.RPCEvents = {}));
 const proxified = Symbol("proxified");
+var taskId = 0;
 function getClassId(target) {
     return hash(target).slice(0, 8);
 }
 exports.getClassId = getClassId;
-function send(event, uniqid, ...data) {
+function send(event, id, ...data) {
     return Buffer.concat([
-        encoded_buffer_1.encode([event, uniqid, ...data]),
+        encoded_buffer_1.encode([event, id, ...data]),
         Buffer.from("\r\n\r\n")
     ]);
 }
@@ -30,7 +40,7 @@ function receive(buf) {
     return parts;
 }
 exports.receive = receive;
-function proxify(srv, srvId, ins) {
+function proxify(srv, oid, ins) {
     return new Proxy(srv, {
         get: (srv, prop) => {
             if (!(prop in srv.constructor.prototype)
@@ -40,12 +50,11 @@ function proxify(srv, srvId, ins) {
             else if (!srv[prop][proxified]) {
                 let fn = function (...args) {
                     return new Promise((resolve, reject) => {
-                        let taskId = shortid_1.generate();
                         let timer = setTimeout(() => {
                             let num = Math.round(ins.timeout / 1000), unit = num === 1 ? "second" : "seconds";
                             reject(new Error(`RPC request timeout after ${num} ${unit}`));
                         }, ins.timeout);
-                        ins["client"].write(send("rpc-request", srvId, taskId, prop, ...args));
+                        ins["client"].write(send(RPCEvents.REQUEST, oid, taskId, prop, ...args));
                         exports.tasks[taskId] = {
                             resolve: (res) => {
                                 resolve(res);
@@ -58,6 +67,9 @@ function proxify(srv, srvId, ins) {
                                 delete exports.tasks[taskId];
                             }
                         };
+                        taskId++;
+                        if (taskId === Number.MAX_SAFE_INTEGER)
+                            taskId = 0;
                     });
                 };
                 set(fn, prop, fn);

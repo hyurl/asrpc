@@ -1,4 +1,3 @@
-import { generate as uniqid } from "shortid";
 import hash = require("object-hash");
 import * as path from "path";
 import * as os from "os";
@@ -9,26 +8,37 @@ export const classId = Symbol("classId");
 export const objectId = Symbol("objectId");
 export const eventEmitter = Symbol("eventEmitter");
 export const tasks: {
-    [uniqid: string]: {
+    [id: number]: {
         resolve: (res) => void,
         reject: (err) => void
     };
 } = {};
 
+export enum RPCEvents {
+    CONNECT,
+    CONNECTED,
+    CONNECT_ERROR,
+    DISCONNECT,
+    REQUEST,
+    RESPONSE,
+    ERROR,
+}
+
 const proxified = Symbol("proxified");
+var taskId = 0;
 
 export function getClassId<T>(target: ServiceClass<T>): string {
     return hash(target).slice(0, 8);
 }
 
-export function send(event: string, uniqid: string, ...data: any[]) {
+export function send(event: string | number, id: string | number, ...data: any[]) {
     return Buffer.concat([
-        encode([event, uniqid, ...data]),
+        encode([event, id, ...data]),
         Buffer.from("\r\n\r\n")
     ]);
 }
 
-export function receive(buf: Buffer): Array<[string, string, any]> {
+export function receive(buf: Buffer): Array<[string | number, string | number, any]> {
     let pack = splitBuffer(buf, "\r\n\r\n"),
         parts = [];
 
@@ -39,7 +49,7 @@ export function receive(buf: Buffer): Array<[string, string, any]> {
     return parts;
 }
 
-export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
+export function proxify(srv: any, oid: number, ins: ServiceInstance): any {
     return new Proxy(srv, {
         get: (srv, prop: string) => {
             if (!(prop in srv.constructor.prototype)
@@ -48,7 +58,6 @@ export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
             } else if (!srv[prop][proxified]) {
                 let fn = function (...args) {
                     return new Promise((resolve, reject) => {
-                        let taskId = uniqid();
                         let timer = setTimeout(() => {
                             let num = Math.round(ins.timeout / 1000),
                                 unit = num === 1 ? "second" : "seconds";
@@ -59,7 +68,7 @@ export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
                         }, ins.timeout);
 
                         ins["client"].write(
-                            send("rpc-request", srvId, taskId, prop, ...args)
+                            send(RPCEvents.REQUEST, oid, taskId, prop, ...args)
                         );
                         tasks[taskId] = {
                             resolve: (res) => {
@@ -73,6 +82,10 @@ export function proxify(srv: any, srvId: string, ins: ServiceInstance): any {
                                 delete tasks[taskId];
                             }
                         };
+
+                        taskId++;
+                        if (taskId === Number.MAX_SAFE_INTEGER)
+                            taskId = 0;
                     });
                 };
 
