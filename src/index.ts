@@ -42,6 +42,7 @@ export class ServiceInstance implements ServiceOptions {
     private instances: {
         [oid: number]: any
     } = {};
+    private queue: any[][] = [];
 
     /**
      * Registers an ordinary JavaScript class (either in ES6 and ES5) as an RPC 
@@ -161,19 +162,24 @@ export class ServiceInstance implements ServiceOptions {
         return new Promise((resolve, reject) => {
             if (!this.client) {
                 let resolved = false;
+                let handler = () => {
+                    !resolved && (resolved = true) && resolve();
+                    while (this.queue.length) {
+                        let msg = this.queue.shift();
+                        this.clientSend(...msg);
+                    }
+                };
                 let connect = () => {
                     if (this.path) {
-                        this.client = net.createConnection(this.path);
+                        this.client = net.createConnection(this.path, handler);
                     } else {
-                        this.client = net.createConnection(this.port, this.host);
+                        this.client = net.createConnection(this.port, this.host, handler);
                     }
                 };
 
                 connect();
 
-                this.client.once("connect", () => {
-                    (resolved = true) && resolve();
-                }).once("error", err => {
+                this.client.once("error", err => {
                     !resolved && (resolved = true) && reject(err);
                 }).on("error", err => {
                     if (isSocketResetError(err)) {
@@ -218,9 +224,7 @@ export class ServiceInstance implements ServiceOptions {
 
                 srv[eventEmitter] = new EventEmitter;
                 this.instances[oid] = srv;
-                this.client.write(
-                    send(RPCEvents.CONNECT, oid, target.name, clsId, ...args)
-                );
+                this.clientSend(RPCEvents.CONNECT, oid, target.name, clsId, ...args);
 
                 srv[eventEmitter].once(RPCEvents[1], () => {
                     resolve(proxify(srv, _oid, this));
@@ -250,7 +254,7 @@ export class ServiceInstance implements ServiceOptions {
             if (!oid) return resolve();
 
             delete this.instances[oid];
-            this.client.write(send(RPCEvents.DISCONNECT, oid), () => {
+            this.clientSend(RPCEvents.DISCONNECT, oid, () => {
                 resolve();
             });
         });
@@ -262,6 +266,20 @@ export class ServiceInstance implements ServiceOptions {
      */
     onError(handler: (err: Error) => void) {
         this.errorHandler = handler;
+    }
+
+    private clientSend(...msg) {
+        if (this.client && !this.client.destroyed) {
+            let cb: Function;
+            if (typeof msg[msg.length - 1] == "function") {
+                cb = msg.pop();
+            } else {
+                cb = () => { };
+            }
+            this.client.write(send.apply(void 0, msg), cb);
+        } else {
+            this.queue.push(msg);
+        }
     }
 }
 

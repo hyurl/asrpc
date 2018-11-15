@@ -13,6 +13,7 @@ class ServiceInstance {
         this.timeout = 5000;
         this.services = {};
         this.instances = {};
+        this.queue = [];
     }
     register(target) {
         target[util_1.classId] = util_1.getClassId(target);
@@ -89,18 +90,23 @@ class ServiceInstance {
         return new Promise((resolve, reject) => {
             if (!this.client) {
                 let resolved = false;
+                let handler = () => {
+                    !resolved && (resolved = true) && resolve();
+                    while (this.queue.length) {
+                        let msg = this.queue.shift();
+                        this.clientSend(...msg);
+                    }
+                };
                 let connect = () => {
                     if (this.path) {
-                        this.client = net.createConnection(this.path);
+                        this.client = net.createConnection(this.path, handler);
                     }
                     else {
-                        this.client = net.createConnection(this.port, this.host);
+                        this.client = net.createConnection(this.port, this.host, handler);
                     }
                 };
                 connect();
-                this.client.once("connect", () => {
-                    (resolved = true) && resolve();
-                }).once("error", err => {
+                this.client.once("error", err => {
                     !resolved && (resolved = true) && reject(err);
                 }).on("error", err => {
                     if (isSocketResetError(err)) {
@@ -145,7 +151,7 @@ class ServiceInstance {
                 srv[util_1.objectId] = oid;
                 srv[util_1.eventEmitter] = new events_1.EventEmitter;
                 this.instances[oid] = srv;
-                this.client.write(util_1.send(util_1.RPCEvents.CONNECT, oid, target.name, clsId, ...args));
+                this.clientSend(util_1.RPCEvents.CONNECT, oid, target.name, clsId, ...args);
                 srv[util_1.eventEmitter].once(util_1.RPCEvents[1], () => {
                     resolve(util_1.proxify(srv, _oid, this));
                 }).once(util_1.RPCEvents[2], (err) => {
@@ -167,13 +173,28 @@ class ServiceInstance {
             if (!oid)
                 return resolve();
             delete this.instances[oid];
-            this.client.write(util_1.send(util_1.RPCEvents.DISCONNECT, oid), () => {
+            this.clientSend(util_1.RPCEvents.DISCONNECT, oid, () => {
                 resolve();
             });
         });
     }
     onError(handler) {
         this.errorHandler = handler;
+    }
+    clientSend(...msg) {
+        if (this.client && !this.client.destroyed) {
+            let cb;
+            if (typeof msg[msg.length - 1] == "function") {
+                cb = msg.pop();
+            }
+            else {
+                cb = () => { };
+            }
+            this.client.write(util_1.send.apply(void 0, msg), cb);
+        }
+        else {
+            this.queue.push(msg);
+        }
     }
 }
 exports.ServiceInstance = ServiceInstance;
