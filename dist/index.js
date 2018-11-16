@@ -173,9 +173,7 @@ class ServiceInstance {
             if (!oid)
                 return resolve();
             delete this.instances[oid];
-            this.clientSend(util_1.RPCEvents.DISCONNECT, oid, () => {
-                resolve();
-            });
+            this.clientSend(util_1.RPCEvents.DISCONNECT, oid, () => resolve());
         });
     }
     onError(handler) {

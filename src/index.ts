@@ -254,9 +254,7 @@ export class ServiceInstance implements ServiceOptions {
             if (!oid) return resolve();
 
             delete this.instances[oid];
-            this.clientSend(RPCEvents.DISCONNECT, oid, () => {
-                resolve();
-            });
+            this.clientSend(RPCEvents.DISCONNECT, oid, () => resolve());
         });
     }
 
