@@ -6,6 +6,7 @@ const path = require("path");
 const fs = require("fs-extra");
 const events_1 = require("events");
 const isSocketResetError = require("is-socket-reset-error");
+const bsp_1 = require("bsp");
 const util_1 = require("./util");
 var oid = 0;
 class ServiceInstance {
@@ -14,6 +15,7 @@ class ServiceInstance {
         this.services = {};
         this.instances = {};
         this.queue = [];
+        this.remains = [];
     }
     register(target) {
         target[util_1.classId] = util_1.getClassId(target);
@@ -48,8 +50,10 @@ class ServiceInstance {
                     this.errorHandler.call(this, err);
                 }
             }).on("connection", socket => {
+                let remains = [];
                 socket.on("data", buf => {
-                    for (let [event, ...data] of util_1.receive(buf)) {
+                    let msg = bsp_1.receive(buf, remains);
+                    for (let [event, ...data] of msg) {
                         event = isNaN(event) ? event : util_1.RPCEvents[event];
                         socket.emit(event, ...data);
                     }
@@ -60,21 +64,21 @@ class ServiceInstance {
                 }).on(util_1.RPCEvents[0], (oid, name, id, ...args) => {
                     if (this.services[id]) {
                         this.instances[oid] = new this.services[id](...args);
-                        socket.write(util_1.send(util_1.RPCEvents.CONNECTED, oid, id));
+                        socket.write(bsp_1.send(util_1.RPCEvents.CONNECTED, oid, id));
                     }
                     else {
                         let err = new Error(`service '${name}' not registered`);
-                        socket.write(util_1.send(util_1.RPCEvents.CONNECT_ERROR, oid, err));
+                        socket.write(bsp_1.send(util_1.RPCEvents.CONNECT_ERROR, oid, err));
                     }
                 }).on(util_1.RPCEvents[3], (oid) => {
                     delete this.instances[oid];
                 }).on(util_1.RPCEvents[4], (oid, taskId, method, ...args) => tslib_1.__awaiter(this, void 0, void 0, function* () {
                     try {
                         let service = this.instances[oid], res = yield service[method](...args);
-                        yield new Promise(resolve => socket.write(util_1.send(util_1.RPCEvents.RESPONSE, oid, taskId, res), () => resolve()));
+                        yield new Promise(resolve => socket.write(bsp_1.send(util_1.RPCEvents.RESPONSE, oid, taskId, res), () => resolve()));
                     }
                     catch (err) {
-                        socket.write(util_1.send(util_1.RPCEvents.ERROR, oid, taskId, err));
+                        socket.write(bsp_1.send(util_1.RPCEvents.ERROR, oid, taskId, err));
                     }
                 }));
             });
@@ -133,7 +137,8 @@ class ServiceInstance {
                         this.errorHandler.call(this, err);
                     }
                 }).on("data", buf => {
-                    for (let [event, oid, ...data] of util_1.receive(buf)) {
+                    let msg = bsp_1.receive(buf, this.remains);
+                    for (let [event, oid, ...data] of msg) {
                         event = isNaN(event) ? event : util_1.RPCEvents[event];
                         this.instances[oid][util_1.eventEmitter].emit(event, ...data);
                     }
@@ -188,7 +193,7 @@ class ServiceInstance {
             else {
                 cb = () => { };
             }
-            this.client.write(util_1.send.apply(void 0, msg), cb);
+            this.client.write(bsp_1.send.apply(void 0, msg), cb);
         }
         else {
             this.queue.push(msg);

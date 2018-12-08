@@ -3,10 +3,9 @@ import * as path from "path";
 import * as fs from "fs-extra";
 import { EventEmitter } from "events";
 import isSocketResetError = require("is-socket-reset-error");
+import { send, receive } from "bsp";
 import {
     getClassId,
-    send,
-    receive,
     tasks,
     proxify,
     objectId,
@@ -17,6 +16,8 @@ import {
 } from './util';
 
 export type ServiceClass<T> = new (...args) => T;
+type ServerPackage = [string | number, number, ...any[]];
+type ClientPackage = [string | number, ...any[]];
 
 export interface ServiceOptions {
     host?: string;
@@ -43,6 +44,7 @@ export class ServiceInstance implements ServiceOptions {
         [oid: number]: any
     } = {};
     private queue: any[][] = [];
+    private remains: Buffer[] = [];
 
     /**
      * Registers an ordinary JavaScript class (either in ES6 and ES5) as an RPC 
@@ -95,8 +97,10 @@ export class ServiceInstance implements ServiceOptions {
                     this.errorHandler.call(this, err);
                 }
             }).on("connection", socket => {
+                let remains: Buffer[] = [];
                 socket.on("data", buf => {
-                    for (let [event, ...data] of receive(buf)) {
+                    let msg = receive<ClientPackage>(buf, remains);
+                    for (let [event, ...data] of msg) {
                         event = isNaN(<any>event) ? event : RPCEvents[event];
                         socket.emit(<string>event, ...data);
                     }
@@ -205,7 +209,8 @@ export class ServiceInstance implements ServiceOptions {
                         this.errorHandler.call(this, err);
                     }
                 }).on("data", buf => {
-                    for (let [event, oid, ...data] of receive(buf)) {
+                    let msg = receive<ServerPackage>(buf, this.remains);
+                    for (let [event, oid, ...data] of msg) {
                         event = isNaN(<any>event) ? event : RPCEvents[event];
                         this.instances[oid][eventEmitter].emit(event, ...data);
                     }

@@ -1,7 +1,7 @@
 import hash = require("object-hash");
 import * as path from "path";
 import * as os from "os";
-import { encode, decode } from "encoded-buffer";
+import { send } from "bsp";
 import { ServiceClass, ServiceInstance } from "./index";
 
 export const classId = Symbol("classId");
@@ -29,24 +29,6 @@ var taskId = 0;
 
 export function getClassId<T>(target: ServiceClass<T>): string {
     return hash(target).slice(0, 8);
-}
-
-export function send(event: string | number, id: string | number, ...data: any[]) {
-    return Buffer.concat([
-        encode([event, id, ...data]),
-        Buffer.from("\r\n\r\n")
-    ]);
-}
-
-export function receive(buf: Buffer): Array<[string | number, string | number, any]> {
-    let pack = splitBuffer(buf, "\r\n\r\n"),
-        parts = [];
-
-    for (let part of pack) {
-        if (part) parts.push(decode(part)[0]);
-    }
-
-    return parts;
 }
 
 export function proxify(srv: any, oid: number, ins: ServiceInstance): any {
@@ -116,19 +98,6 @@ export function absPath(filename: string): string {
     }
 
     return filename;
-}
-
-function splitBuffer(buf: Buffer, sep: string) {
-    let parts: Buffer[] = [],
-        offset = 0,
-        index = -1;
-
-    while (0 <= (index = buf.indexOf(sep, offset))) {
-        parts.push(buf.slice(offset, index));
-        offset = index + sep.length;
-    }
-
-    return parts;
 }
 
 function set(target, prop, value, writable = false) {

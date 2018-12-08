@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const hash = require("object-hash");
 const path = require("path");
 const os = require("os");
-const encoded_buffer_1 = require("encoded-buffer");
+const bsp_1 = require("bsp");
 exports.classId = Symbol("classId");
 exports.objectId = Symbol("objectId");
 exports.eventEmitter = Symbol("eventEmitter");
@@ -24,22 +24,6 @@ function getClassId(target) {
     return hash(target).slice(0, 8);
 }
 exports.getClassId = getClassId;
-function send(event, id, ...data) {
-    return Buffer.concat([
-        encoded_buffer_1.encode([event, id, ...data]),
-        Buffer.from("\r\n\r\n")
-    ]);
-}
-exports.send = send;
-function receive(buf) {
-    let pack = splitBuffer(buf, "\r\n\r\n"), parts = [];
-    for (let part of pack) {
-        if (part)
-            parts.push(encoded_buffer_1.decode(part)[0]);
-    }
-    return parts;
-}
-exports.receive = receive;
 function proxify(srv, oid, ins) {
     return new Proxy(srv, {
         get: (srv, prop) => {
@@ -54,7 +38,7 @@ function proxify(srv, oid, ins) {
                             let num = Math.round(ins.timeout / 1000), unit = num === 1 ? "second" : "seconds";
                             reject(new Error(`RPC request timeout after ${num} ${unit}`));
                         }, ins.timeout);
-                        ins["client"].write(send(RPCEvents.REQUEST, oid, taskId, prop, ...args));
+                        ins["client"].write(bsp_1.send(RPCEvents.REQUEST, oid, taskId, prop, ...args));
                         exports.tasks[taskId] = {
                             resolve: (res) => {
                                 resolve(res);
@@ -98,14 +82,6 @@ function absPath(filename) {
     return filename;
 }
 exports.absPath = absPath;
-function splitBuffer(buf, sep) {
-    let parts = [], offset = 0, index = -1;
-    while (0 <= (index = buf.indexOf(sep, offset))) {
-        parts.push(buf.slice(offset, index));
-        offset = index + sep.length;
-    }
-    return parts;
-}
 function set(target, prop, value, writable = false) {
     Object.defineProperty(target, prop, {
         configurable: true,
