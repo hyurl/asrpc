@@ -2,8 +2,8 @@ import * as net from "net";
 import * as path from "path";
 import * as fs from "fs-extra";
 import { EventEmitter } from "events";
-import isSocketResetError = require("is-socket-reset-error");
 import { send, receive } from "bsp";
+import isSocketResetError = require("is-socket-reset-error");
 import {
     getClassId,
     tasks,
@@ -12,7 +12,9 @@ import {
     eventEmitter,
     absPath,
     classId,
-    RPCEvents
+    RPCEvents,
+    err2obj,
+    obj2err
 } from './util';
 
 export type ServiceClass<T> = new (...args) => T;
@@ -138,7 +140,12 @@ export class ServiceInstance implements ServiceOptions {
                             () => resolve()
                         ));
                     } catch (err) {
-                        socket.write(send(RPCEvents.ERROR, oid, taskId, err));
+                        socket.write(send(
+                            RPCEvents.ERROR,
+                            oid,
+                            taskId,
+                            err2obj(err)
+                        ));
                     }
                 });
             });
@@ -238,7 +245,7 @@ export class ServiceInstance implements ServiceOptions {
                 }).on(RPCEvents[5], (taskId: number, res: any) => {
                     tasks[taskId].resolve(res);
                 }).on(RPCEvents[6], (taskId: number, err: any) => {
-                    tasks[taskId].reject(err);
+                    tasks[taskId].reject(obj2err(err));
                 });
 
                 oid++;

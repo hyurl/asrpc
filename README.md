@@ -135,6 +135,17 @@ This method doesn't do any other job, just make a reference in the internal map
 with a unique-supposed string id generated according to the class definition 
 itself.
 
+By default, this module will try to get a unique ID according to the class 
+definition itself, however, you could always set a static property `id` of the
+class to use a specified ID instead.
+
+```typescript
+class SimpleCalculator {
+    static id = "simple-calculator";
+    // ...
+}
+```
+
 *This method should only be called on the server side.*
 
 #### `ServiceInstance.prototype.deregister<T>(target: ServiceClass<T>): void`
@@ -185,7 +196,7 @@ the first time `connect()` is called, a socket client will be created, and ONLY
 one client will be created in one `ServiceInstance`, every connected service 
 shares this client. There is no need and no reason to separate client for each 
 service. The requests and responses are distinguished by the service itself, you 
-don't have to worry connecting to much services might causing multiple 
+don't have to worry connecting too much services might causing creating multiple 
 connections, it will not.
 
 The socket channel sends minimal data (numbers starts from `0`) to explain which
@@ -195,28 +206,10 @@ best performance of data transmission.
 ## Supported Data Types
 
 Since the operation will be delivered to the server rather than calling locally,
-so not all JavaScript types are supported through socket communication, but this
-package uses [encoded-buffer](https://github.com/hyurl/encoded-buffer) to 
-transfer data in socket, it supports many common types (more than `JSON` and 
-`BSON`), currently, these types are supported:
-
-- `string`
-- `number`
-- `boolean`
-- `symbol` not the same symbol as original, just a new symbol with the same 
-    description.
-- `undefined`
-- `null`
-- `object`
-- `Array` only the enumerable elements will be transferred.
-- `Buffer`
-- `Date`
-- `Error`
-- `RegExp`
-
-Any other types, will be transferred as an standard object or not transferred at
-all. Any method called remotely should only accept these types of arguments, and 
-the returning value should match one of these types as well.
+so not all JavaScript types are supported through socket communication, due to 
+efficiency and compatibility considerations, this module (since version 2.0) 
+uses **JSON** to transfer data in socket, so only the types that JSON supports 
+will be transmit through the channel.
 
 ## Error Handle
 
@@ -226,7 +219,7 @@ client side, you will not see any difference between them, so just focus on
 your design as usual.
 
 But not all errors can't be caught, like an error occurred inside the socket 
-itself, these errors can be handled via `onError()` method. 
+itself, these errors can be handled via `onError()` method.
 
 ## Warning
 

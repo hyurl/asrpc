@@ -5,8 +5,8 @@ const net = require("net");
 const path = require("path");
 const fs = require("fs-extra");
 const events_1 = require("events");
-const isSocketResetError = require("is-socket-reset-error");
 const bsp_1 = require("bsp");
+const isSocketResetError = require("is-socket-reset-error");
 const util_1 = require("./util");
 var oid = 0;
 class ServiceInstance {
@@ -78,7 +78,7 @@ class ServiceInstance {
                         yield new Promise(resolve => socket.write(bsp_1.send(util_1.RPCEvents.RESPONSE, oid, taskId, res), () => resolve()));
                     }
                     catch (err) {
-                        socket.write(bsp_1.send(util_1.RPCEvents.ERROR, oid, taskId, err));
+                        socket.write(bsp_1.send(util_1.RPCEvents.ERROR, oid, taskId, util_1.err2obj(err)));
                     }
                 }));
             });
@@ -164,7 +164,7 @@ class ServiceInstance {
                 }).on(util_1.RPCEvents[5], (taskId, res) => {
                     util_1.tasks[taskId].resolve(res);
                 }).on(util_1.RPCEvents[6], (taskId, err) => {
-                    util_1.tasks[taskId].reject(err);
+                    util_1.tasks[taskId].reject(util_1.obj2err(err));
                 });
                 oid++;
                 if (oid === Number.MAX_SAFE_INTEGER)

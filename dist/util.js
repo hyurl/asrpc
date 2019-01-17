@@ -4,6 +4,9 @@ const hash = require("object-hash");
 const path = require("path");
 const os = require("os");
 const bsp_1 = require("bsp");
+const pick = require("lodash/pick");
+const omit = require("lodash/omit");
+const assert_1 = require("assert");
 exports.classId = Symbol("classId");
 exports.objectId = Symbol("objectId");
 exports.eventEmitter = Symbol("eventEmitter");
@@ -21,7 +24,7 @@ var RPCEvents;
 const proxified = Symbol("proxified");
 var taskId = 0;
 function getClassId(target) {
-    return hash(target).slice(0, 8);
+    return String(target["id"] || hash(target).slice(0, 8));
 }
 exports.getClassId = getClassId;
 function proxify(srv, oid, ins) {
@@ -90,4 +93,32 @@ function set(target, prop, value, writable = false) {
         value
     });
 }
+function err2obj(err) {
+    let props = ["name", "message", "stack"];
+    return Object.assign({}, pick(err, props), omit(props));
+}
+exports.err2obj = err2obj;
+function obj2err(obj) {
+    let Errors = {
+        AssertionError: assert_1.AssertionError,
+        Error,
+        EvalError,
+        RangeError,
+        ReferenceError,
+        SyntaxError,
+        TypeError,
+    };
+    let err = Object.create((Errors[obj.name] || Error).prototype);
+    let props = ["name", "message", "stack"];
+    for (let prop in obj) {
+        if (props.indexOf(prop) >= 0) {
+            set(err, prop, obj[prop], true);
+        }
+        else {
+            err[prop] = obj[prop];
+        }
+    }
+    return err;
+}
+exports.obj2err = obj2err;
 //# sourceMappingURL=util.js.map

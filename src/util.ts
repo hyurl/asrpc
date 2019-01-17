@@ -2,7 +2,10 @@ import hash = require("object-hash");
 import * as path from "path";
 import * as os from "os";
 import { send } from "bsp";
+import pick = require("lodash/pick");
+import omit = require("lodash/omit");
 import { ServiceClass, ServiceInstance } from "./index";
+import { AssertionError } from 'assert';
 
 export const classId = Symbol("classId");
 export const objectId = Symbol("objectId");
@@ -28,7 +31,7 @@ const proxified = Symbol("proxified");
 var taskId = 0;
 
 export function getClassId<T>(target: ServiceClass<T>): string {
-    return hash(target).slice(0, 8);
+    return String(target["id"] || hash(target).slice(0, 8));
 }
 
 export function proxify(srv: any, oid: number, ins: ServiceInstance): any {
@@ -107,4 +110,35 @@ function set(target, prop, value, writable = false) {
         writable,
         value
     });
+}
+
+type ErrorObject = Error & { [x: string]: any };
+
+export function err2obj(err: ErrorObject): ErrorObject {
+    let props = ["name", "message", "stack"];
+    return Object.assign({}, pick(err, props), omit(props)) as any;
+}
+
+export function obj2err(obj: ErrorObject): ErrorObject {
+    let Errors = {
+        AssertionError,
+        Error,
+        EvalError,
+        RangeError,
+        ReferenceError,
+        SyntaxError,
+        TypeError,
+    };
+    let err = Object.create((Errors[obj.name] || Error).prototype);
+    let props = ["name", "message", "stack"];
+
+    for (let prop in obj) {
+        if (props.indexOf(prop) >= 0) {
+            set(err, prop, obj[prop], true);
+        } else {
+            err[prop] = obj[prop];
+        }
+    }
+
+    return err;
 }

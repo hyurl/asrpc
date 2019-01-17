@@ -30,12 +30,6 @@ class MyService {
         });
     }
 
-    getDate() {
-        return awaiter(this, void 0, void 0, function* () {
-            return new Date();
-        });
-    }
-
     getStrWithLineEndings() {
         return awaiter(this, void 0, void 0, function* () {
             return "hello\r\n\r\nworld";
@@ -77,7 +71,6 @@ awaiter(void 0, void 0, void 0, function* () {
             if (parseFloat(process.version) >= 8.10) {
                 assert.strictEqual(yield srv.getPid(), process.ppid);
             }
-            assert.ok((yield srv.getDate()) instanceof Date);
             assert.strictEqual((yield srv.getStrWithLineEndings()), "hello\r\n\r\nworld");
             yield srv.throw();
             yield srv.exit();
