@@ -30,8 +30,7 @@ exports.getClassId = getClassId;
 function proxify(srv, oid, ins) {
     return new Proxy(srv, {
         get: (srv, prop) => {
-            if (!(prop in srv.constructor.prototype)
-                || typeof srv[prop] != "function") {
+            if (!(prop in srv) || typeof srv[prop] != "function") {
                 return srv[prop];
             }
             else if (!srv[prop][proxified]) {

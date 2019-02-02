@@ -37,8 +37,7 @@ export function getClassId<T>(target: ServiceClass<T>): string {
 export function proxify(srv: any, oid: number, ins: ServiceInstance): any {
     return new Proxy(srv, {
         get: (srv, prop: string) => {
-            if (!(prop in srv.constructor.prototype)
-                || typeof srv[prop] != "function") {
+            if (!(prop in srv) || typeof srv[prop] != "function") {
                 return srv[prop];
             } else if (!srv[prop][proxified]) {
                 let fn = function (...args) {
