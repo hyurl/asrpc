@@ -24,9 +24,23 @@ var RPCEvents;
 const proxified = Symbol("proxified");
 var taskId = 0;
 function getClassId(target) {
-    return String(target["id"] || hash(target).slice(0, 8));
+    return String(target.id || hash(target).slice(0, 8));
 }
 exports.getClassId = getClassId;
+function getInstance(target, ...args) {
+    if (typeof target.getInstance === "function") {
+        return target.getInstance();
+    }
+    else {
+        try {
+            return new target(...args);
+        }
+        catch (err) {
+            return Object.create(target.prototype);
+        }
+    }
+}
+exports.getInstance = getInstance;
 function proxify(srv, oid, ins) {
     return new Proxy(srv, {
         get: (srv, prop) => {

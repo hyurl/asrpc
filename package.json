@@ -1,6 +1,6 @@
 {
   "name": "asrpc",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "A tool to make your class as an RPC service.",
   "main": "dist/index.js",
   "types": "src/index.ts",

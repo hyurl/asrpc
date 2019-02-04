@@ -63,7 +63,7 @@ class ServiceInstance {
                     }
                 }).on(util_1.RPCEvents[0], (oid, name, id, ...args) => {
                     if (this.services[id]) {
-                        this.instances[oid] = new this.services[id](...args);
+                        this.instances[oid] = util_1.getInstance(this.services[id], ...args);
                         socket.write(bsp_1.send(util_1.RPCEvents.CONNECTED, oid, id));
                     }
                     else {
@@ -116,16 +116,18 @@ class ServiceInstance {
                     if (isSocketResetError(err)) {
                         this.client.unref();
                         let times = 0;
+                        let maxTimes = Math.round(this.timeout / 50);
                         let reconnect = () => {
                             let timer = setTimeout(() => {
                                 connect();
                                 times++;
-                                if (times === 5) {
-                                    clearTimeout(timer);
-                                }
-                                else if (!this.client.destroyed
+                                if (!this.client.destroyed
                                     || this.client.connecting) {
                                     clearTimeout(timer);
+                                }
+                                else if (times === maxTimes) {
+                                    clearTimeout(timer);
+                                    this.errorHandler.call(this, err);
                                 }
                                 else {
                                     reconnect();
@@ -149,7 +151,7 @@ class ServiceInstance {
             }
         }).then(() => {
             return new Promise((resolve, reject) => {
-                let srv = new target(...args);
+                let srv = util_1.getInstance(target, ...args);
                 let _oid = oid;
                 let clsId = srv[util_1.classId] = target[util_1.classId]
                     || (target[util_1.classId] = util_1.getClassId(target));

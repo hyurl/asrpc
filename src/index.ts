@@ -14,10 +14,17 @@ import {
     classId,
     RPCEvents,
     err2obj,
-    obj2err
+    obj2err,
+    getInstance
 } from './util';
 
-export type ServiceClass<T> = new (...args) => T;
+export interface ServiceClass<T> {
+    new(...args: any[]): T;
+    id?: string;
+    getInstance?(): T;
+}
+
+// export type ServiceClass<T> = new (...args) => T & { id?: string, getInstance?: () => T };
 type ServerPackage = [string | number, number, ...any[]];
 type ClientPackage = [string | number, ...any[]];
 
@@ -117,7 +124,7 @@ export class ServiceInstance implements ServiceOptions {
                     ...args
                 ) => {
                     if (this.services[id]) {
-                        this.instances[oid] = new this.services[id](...args);
+                        this.instances[oid] = getInstance(this.services[id], ...args);
                         socket.write(send(RPCEvents.CONNECTED, oid, id));
                     } else {
                         let err = new Error(`service '${name}' not registered`);
@@ -197,16 +204,18 @@ export class ServiceInstance implements ServiceOptions {
                         this.client.unref();
 
                         let times = 0;
+                        let maxTimes = Math.round(this.timeout / 50);
                         let reconnect = () => {
                             let timer = setTimeout(() => {
                                 connect();
                                 times++;
 
-                                if (times === 5) {
-                                    clearTimeout(timer);
-                                } else if (!this.client.destroyed
+                                if (!this.client.destroyed
                                     || this.client.connecting) {
                                     clearTimeout(timer);
+                                } else if (times === maxTimes) {
+                                    clearTimeout(timer);
+                                    this.errorHandler.call(this, err);
                                 } else {
                                     reconnect();
                                 }
@@ -227,7 +236,7 @@ export class ServiceInstance implements ServiceOptions {
             }
         }).then(() => {
             return new Promise((resolve: (value: T) => void, reject) => {
-                let srv = new target(...args);
+                let srv = getInstance(target, ...args);
                 let _oid = oid;
                 let clsId: string = srv[classId] = target[classId]
                     || (target[classId] = getClassId(target));

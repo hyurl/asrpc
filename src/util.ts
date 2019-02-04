@@ -31,7 +31,19 @@ const proxified = Symbol("proxified");
 var taskId = 0;
 
 export function getClassId<T>(target: ServiceClass<T>): string {
-    return String(target["id"] || hash(target).slice(0, 8));
+    return String(target.id || hash(target).slice(0, 8));
+}
+
+export function getInstance<T>(target: ServiceClass<T>, ...args: any[]): T {
+    if (typeof target.getInstance === "function") {
+        return target.getInstance();
+    } else {
+        try {
+            return new target(...args);
+        } catch (err) {
+            return Object.create(target.prototype);
+        }
+    }
 }
 
 export function proxify(srv: any, oid: number, ins: ServiceInstance): any {

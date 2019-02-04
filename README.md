@@ -175,6 +175,18 @@ is provided, it is any number of arguments passed to the class constructor. When
 the service is connected, they will be assigned to the instance on the server as
 well.
 
+By default, this module will try to get the instance by using keyword `new`,
+however, if the `target` provides a static method `getInstance()` (without 
+parameters), it will try to call this method to get the instance instead.
+
+```typescript
+class SimpleCalculator {
+    static getInstance() {
+        return new SimpleCalculator();
+    }
+}
+```
+
 *This method can only be called on the client side.*
 
 #### `ServiceInstance.prototype.disconnect(service: any): Promise<void>`
