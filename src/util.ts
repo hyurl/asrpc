@@ -36,7 +36,7 @@ export function getClassId<T>(target: ServiceClass<T>): string {
 
 export function getInstance<T>(target: ServiceClass<T>, ...args: any[]): T {
     if (typeof target.getInstance === "function") {
-        return target.getInstance();
+        return target.getInstance(...args);
     } else {
         try {
             return new target(...args);

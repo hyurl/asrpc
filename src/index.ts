@@ -21,7 +21,7 @@ import {
 export interface ServiceClass<T> {
     new(...args: any[]): T;
     id?: string;
-    getInstance?(): T;
+    getInstance?(...args: any[]): T;
 }
 
 // export type ServiceClass<T> = new (...args) => T & { id?: string, getInstance?: () => T };

@@ -176,8 +176,8 @@ the service is connected, they will be assigned to the instance on the server as
 well.
 
 By default, this module will try to get the instance by using keyword `new`,
-however, if the `target` provides a static method `getInstance()` (without 
-parameters), it will try to call this method to get the instance instead.
+however, if the `target` provides a static method `getInstance()`, it will try 
+to call this method to get the instance instead.
 
 ```typescript
 class SimpleCalculator {

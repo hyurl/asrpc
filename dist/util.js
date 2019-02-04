@@ -29,7 +29,7 @@ function getClassId(target) {
 exports.getClassId = getClassId;
 function getInstance(target, ...args) {
     if (typeof target.getInstance === "function") {
-        return target.getInstance();
+        return target.getInstance(...args);
     }
     else {
         try {
