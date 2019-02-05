@@ -50,21 +50,22 @@ function proxify(srv, oid, ins) {
             else if (!srv[prop][proxified]) {
                 let fn = function (...args) {
                     return new Promise((resolve, reject) => {
+                        let _taskId = taskId;
                         let timer = setTimeout(() => {
                             let num = Math.round(ins.timeout / 1000), unit = num === 1 ? "second" : "seconds";
                             reject(new Error(`RPC request timeout after ${num} ${unit}`));
                         }, ins.timeout);
-                        ins["client"].write(bsp_1.send(RPCEvents.REQUEST, oid, taskId, prop, ...args));
-                        exports.tasks[taskId] = {
+                        ins["client"].write(bsp_1.send(RPCEvents.REQUEST, oid, _taskId, prop, ...args));
+                        exports.tasks[_taskId] = {
                             resolve: (res) => {
                                 resolve(res);
                                 clearTimeout(timer);
-                                delete exports.tasks[taskId];
+                                delete exports.tasks[_taskId];
                             },
                             reject: (err) => {
                                 reject(err);
                                 clearTimeout(timer);
-                                delete exports.tasks[taskId];
+                                delete exports.tasks[_taskId];
                             }
                         };
                         taskId++;

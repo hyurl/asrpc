@@ -241,11 +241,11 @@ export class ServiceInstance implements ServiceOptions {
                 let clsId: string = srv[classId] = target[classId]
                     || (target[classId] = getClassId(target));
 
-                srv[objectId] = oid;
+                srv[objectId] = _oid;
 
                 srv[eventEmitter] = new EventEmitter;
-                this.instances[oid] = srv;
-                this.clientSend(RPCEvents.CONNECT, oid, target.name, clsId, ...args);
+                this.instances[_oid] = srv;
+                this.clientSend(RPCEvents.CONNECT, _oid, target.name, clsId, ...args);
 
                 srv[eventEmitter].once(RPCEvents[1], () => {
                     resolve(proxify(srv, _oid, this));

@@ -54,6 +54,7 @@ export function proxify(srv: any, oid: number, ins: ServiceInstance): any {
             } else if (!srv[prop][proxified]) {
                 let fn = function (...args) {
                     return new Promise((resolve, reject) => {
+                        let _taskId = taskId;
                         let timer = setTimeout(() => {
                             let num = Math.round(ins.timeout / 1000),
                                 unit = num === 1 ? "second" : "seconds";
@@ -64,18 +65,18 @@ export function proxify(srv: any, oid: number, ins: ServiceInstance): any {
                         }, ins.timeout);
 
                         ins["client"].write(
-                            send(RPCEvents.REQUEST, oid, taskId, prop, ...args)
+                            send(RPCEvents.REQUEST, oid, _taskId, prop, ...args)
                         );
-                        tasks[taskId] = {
+                        tasks[_taskId] = {
                             resolve: (res) => {
                                 resolve(res);
                                 clearTimeout(timer);
-                                delete tasks[taskId];
+                                delete tasks[_taskId];
                             },
                             reject: (err) => {
                                 reject(err);
                                 clearTimeout(timer);
-                                delete tasks[taskId];
+                                delete tasks[_taskId];
                             }
                         };
 

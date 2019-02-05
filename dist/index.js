@@ -155,10 +155,10 @@ class ServiceInstance {
                 let _oid = oid;
                 let clsId = srv[util_1.classId] = target[util_1.classId]
                     || (target[util_1.classId] = util_1.getClassId(target));
-                srv[util_1.objectId] = oid;
+                srv[util_1.objectId] = _oid;
                 srv[util_1.eventEmitter] = new events_1.EventEmitter;
-                this.instances[oid] = srv;
-                this.clientSend(util_1.RPCEvents.CONNECT, oid, target.name, clsId, ...args);
+                this.instances[_oid] = srv;
+                this.clientSend(util_1.RPCEvents.CONNECT, _oid, target.name, clsId, ...args);
                 srv[util_1.eventEmitter].once(util_1.RPCEvents[1], () => {
                     resolve(util_1.proxify(srv, _oid, this));
                 }).once(util_1.RPCEvents[2], (err) => {
